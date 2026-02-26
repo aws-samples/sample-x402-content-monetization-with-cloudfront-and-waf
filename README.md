@@ -2,7 +2,7 @@
 
 Monetize your content with one-click deployment. This solution uses the [x402 payment protocol](https://x402.org) to charge AI agents and bots for accessing your content — payments in USDC stablecoins on the Base blockchain, enforced at the AWS edge.
 
-Deploy a single SAM stack and get: Amazon CloudFront distribution with sample content, AWS WAF with Bot Control, AWS Lambda@Edge payment verification and settlement, a visual route config editor, and a revenue dashboard. Configuration lives in AWS Systems Manager (SSM) Parameter Store, credentials in AWS Secrets Manager, logs in Amazon CloudWatch, and content in Amazon S3. No servers to manage, no code to write.
+Deploy a single SAM stack and get: Amazon CloudFront distribution with sample content, AWS WAF with Bot Control v5 (650+ bots, AI Activity Dashboard), AWS Lambda@Edge payment verification and settlement, a visual route config editor, and a revenue dashboard. Configuration lives in AWS Systems Manager (SSM) Parameter Store, credentials in AWS Secrets Manager, logs in Amazon CloudWatch, and content in Amazon S3. No servers to manage, no code to write.
 
 ## How It Works
 
@@ -289,7 +289,7 @@ Changes propagate to WAF within seconds via EventBridge. A scheduled sync runs e
 | Component | Purpose |
 |---|---|
 | **CloudFront Distribution** | CDN and edge compute host |
-| **WAF Web ACL + Bot Control** | Traffic classification, bot verification, route-level blocking |
+| **WAF Web ACL + Bot Control v5** | Traffic classification (650+ bots), bot verification, route-level blocking, AI Activity Dashboard |
 | **WAF Rule Group** (dynamic) | Translates route config into WAF rules — single source of truth for routing |
 | **Lambda@Edge Origin Request** | x402 payment verification, 402 response generation |
 | **Lambda@Edge Origin Response** | Payment settlement on successful origin response |
@@ -302,6 +302,10 @@ Changes propagate to WAF within seconds via EventBridge. A scheduled sync runs e
 ### CloudWatch Revenue Dashboard
 
 ![CloudWatch Dashboard](.operations/cloudwatch-dashboard.png)
+
+### AI Activity Dashboard
+
+AWS WAF Bot Control v5 includes the [AI Activity Dashboard](https://aws.amazon.com/about-aws/whats-new/2026/02/aws-waf-ai-activity-dashboard/) at no extra cost. It provides visibility into AI bot traffic trends, showing which AI bots are accessing your content, request volumes over time, and category breakdowns. Access it from the WAF console under the Bot Control tab.
 
 ## Facilitator Selection
 

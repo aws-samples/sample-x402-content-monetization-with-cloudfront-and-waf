@@ -12,8 +12,8 @@ import type { RuleGroupType } from 'react-querybuilder';
 // Constants
 // ---------------------------------------------------------------------------
 
-export const RULE_GROUP_CAPACITY = 350;
-export const FIXED_OVERHEAD_WCU = 62;
+export const RULE_GROUP_CAPACITY = 500;
+export const FIXED_OVERHEAD_WCU = 187;
 
 // ---------------------------------------------------------------------------
 // Pattern WCU Estimation

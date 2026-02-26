@@ -12,16 +12,16 @@ import type { WafRule, WafStatement } from '../../src/backoffice/waf-sync/types'
 
 describe('wcu-calculator', () => {
   describe('FIXED_OVERHEAD_WCU', () => {
-    it('should be 62 (8 guard + 54 bot signal)', () => {
+    it('should be 187 (8 guard + 179 bot signal)', () => {
       expect(GUARD_RULE_WCU).toBe(8);
-      expect(BOT_SIGNAL_WCU).toBe(54);
-      expect(FIXED_OVERHEAD_WCU).toBe(62);
+      expect(BOT_SIGNAL_WCU).toBe(179);
+      expect(FIXED_OVERHEAD_WCU).toBe(187);
     });
   });
 
   describe('RULE_GROUP_CAPACITY', () => {
-    it('should be 350', () => {
-      expect(RULE_GROUP_CAPACITY).toBe(350);
+    it('should be 500', () => {
+      expect(RULE_GROUP_CAPACITY).toBe(500);
     });
   });
 
@@ -229,17 +229,17 @@ describe('wcu-calculator', () => {
         action: 'block' as const,
       }));
       const result = validateWcuCapacity(rules);
-      // 10 rules × 2 WCU each = 20 + 62 overhead = 82
+      // 10 rules × 2 WCU each = 20 + 187 overhead = 207
       expect(result.valid).toBe(true);
       expect(result.routeRulesWcu).toBe(20);
-      expect(result.totalWcu).toBe(82);
-      expect(result.capacity).toBe(350);
+      expect(result.totalWcu).toBe(207);
+      expect(result.capacity).toBe(500);
     });
 
     it('should return valid=false when exceeding capacity', () => {
-      // Create enough regex rules to exceed 350 WCU
-      // Each regex rule = 3 WCU, need (350 - 62) / 3 + 1 ≈ 97 rules
-      const rules: WafRule[] = Array.from({ length: 97 }, (_, i) => ({
+      // Create enough regex rules to exceed 500 WCU
+      // Each regex rule = 3 WCU, need (500 - 187) / 3 + 1 ≈ 105 rules
+      const rules: WafRule[] = Array.from({ length: 105 }, (_, i) => ({
         name: `r${i}`,
         priority: i + 1,
         statement: {
@@ -252,14 +252,14 @@ describe('wcu-calculator', () => {
         action: 'block' as const,
       }));
       const result = validateWcuCapacity(rules);
-      // 97 × 3 = 291 + 62 = 353 > 350
+      // 105 × 3 = 315 + 187 = 502 > 500
       expect(result.valid).toBe(false);
-      expect(result.totalWcu).toBe(353);
+      expect(result.totalWcu).toBe(502);
     });
 
-    it('should return valid=true at exactly 350 WCU', () => {
-      // 350 - 62 = 288 WCU budget. 288 ByteMatch rules = 288 WCU.
-      const rules: WafRule[] = Array.from({ length: 288 }, (_, i) => ({
+    it('should return valid=true at exactly 500 WCU', () => {
+      // 500 - 187 = 313 WCU budget. 313 ByteMatch rules = 313 WCU.
+      const rules: WafRule[] = Array.from({ length: 313 }, (_, i) => ({
         name: `r${i}`,
         priority: i + 1,
         statement: {
@@ -273,7 +273,7 @@ describe('wcu-calculator', () => {
         action: 'block' as const,
       }));
       const result = validateWcuCapacity(rules);
-      expect(result.totalWcu).toBe(350);
+      expect(result.totalWcu).toBe(500);
       expect(result.valid).toBe(true);
     });
   });

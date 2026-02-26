@@ -19,7 +19,7 @@ import type { WafRule, WafStatement } from './types';
 // ---------------------------------------------------------------------------
 
 /** Maximum WCU capacity of the WAF Rule Group. */
-export const RULE_GROUP_CAPACITY = 350;
+export const RULE_GROUP_CAPACITY = 500;
 
 /** Number of guarded headers in the guard rule (OR of SizeConstraint statements). */
 export const GUARD_RULE_HEADER_COUNT = 8;
@@ -28,10 +28,10 @@ export const GUARD_RULE_HEADER_COUNT = 8;
 export const BOT_SIGNAL_ACTOR_TYPE_COUNT = 3;
 
 /** Number of bot category signal rules. */
-export const BOT_SIGNAL_CATEGORY_COUNT = 14;
+export const BOT_SIGNAL_CATEGORY_COUNT = 16;
 
 /** Number of bot organization signal rules. */
-export const BOT_SIGNAL_ORG_COUNT = 6;
+export const BOT_SIGNAL_ORG_COUNT = 129;
 
 /** Number of bot name signal rules. */
 export const BOT_SIGNAL_NAME_COUNT = 31;

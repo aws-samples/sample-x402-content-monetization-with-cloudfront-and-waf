@@ -308,7 +308,7 @@ function buildGuardRule(): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 
 /**
- * All 14 Bot Control category labels. Each maps to a WAF rule that inserts
+ * All 16 Bot Control v5.0 category labels. Each maps to a WAF rule that inserts
  * `x-amzn-waf-bot-category: <category>` when the label is present.
  */
 const BOT_CATEGORIES = [
@@ -325,11 +325,13 @@ const BOT_CATEGORIES = [
   'http_library',
   'link_checker',
   'email_client',
+  'page_preview',
+  'webhooks',
   'miscellaneous',
 ] as const;
 
 /**
- * Known bot names from AWS WAF Bot Control (changelog v3.0–v3.3).
+ * Curated subset of bot names from AWS WAF Bot Control.
  * Each maps to a WAF rule that inserts `x-amzn-waf-bot-name: <name>`.
  * These rules evaluate after organization rules so that the specific
  * bot name overwrites the org fallback (last-match-wins).
@@ -376,18 +378,141 @@ const BOT_NAMES = [
 ] as const;
 
 /**
- * Known bot organizations from AWS WAF Bot Control.
+ * All 129 bot organizations from AWS WAF Bot Control v5.0.
  * Each maps to a WAF rule that inserts `x-amzn-waf-bot-name: org:<org>`.
  * These rules evaluate before name rules to act as a fallback — if a bot
  * has both a name and an organization label, the name rule overwrites.
  */
 const BOT_ORGS = [
-  'facebook',
-  'facebook-externalfetcher',
-  'openai',
+  'acquia',
+  'adyen',
+  'agencyanalytics',
+  'ahrefs',
+  'airo',
+  'algolia',
   'amazon',
+  'anthropic',
+  'apple',
+  'atlassian',
+  'audisto',
+  'automattic',
+  'baidu',
+  'betterstack',
+  'blogvault',
+  'brandwatch',
+  'buttondown',
+  'bytedance',
+  'capjamesg',
+  'censys',
+  'cludo',
+  'cognition',
+  'common_crawl',
+  'comscore',
+  'cookiehub',
+  'criteo',
+  'datadog',
+  'dataforseo',
+  'designmodo',
+  'digicert',
+  'duckduckgo',
+  'easycron',
+  'elmahio',
+  'facebook',
+  'feedbin',
+  'flipboard',
+  'foxhound_systems',
+  'godaddy',
+  'google',
+  'hetrixtools',
+  'host-tracker',
+  'huawei',
+  'hubspot',
+  'huckabuy',
+  'immutable',
+  'incsub',
+  'isdown',
+  'jumio',
+  'kagiinc',
+  'kalpraj_solutions',
+  'line',
+  'lumar',
+  'magnetme',
+  'majestic',
+  'make',
   'marfeel',
-  'metaexternalagent',
+  'marginaliasearch',
+  'medialogia',
+  'mediamonitoringbot',
+  'microsoft',
+  'monspark',
+  'motominer',
+  'mozilla',
+  'mushi_labs',
+  'naver',
+  'new_relic',
+  'newsblur',
+  'nitropack',
+  'nodeping',
+  'nytimes',
+  'omnisend',
+  'oncrawl',
+  'openai',
+  'oracle',
+  'paypal',
+  'perplexity',
+  'pinterest',
+  'pressengine',
+  'pro_sitemaps',
+  'probely',
+  'qualified',
+  'qualys',
+  'quantcast',
+  'qwant',
+  'raptive',
+  'realify',
+  'retool',
+  'rois',
+  'saasgroup',
+  'se_ranking',
+  'seekport',
+  'semrush',
+  'sentry',
+  'serverhunter',
+  'seznam',
+  'siteimprove',
+  'siteuptime',
+  'skroutz',
+  'slack',
+  'smartbear',
+  'snap',
+  'sogou',
+  'solarwinds',
+  'sspworks',
+  'stape',
+  'stripe',
+  'sureswiftcapital',
+  'svix',
+  'synopsys',
+  'taboola',
+  'telegram',
+  'the_trade_desk',
+  'updown',
+  'uptimia',
+  'uptrends',
+  'w3c',
+  'ward',
+  'watchful',
+  'webceo',
+  'webpros',
+  'wp_umbrella',
+  'wpmudev',
+  'x',
+  'xy_planning_network',
+  'yahoo',
+  'yandex',
+  'yext',
+  'zoho',
+  'zoovu',
 ] as const;
 
 /**
@@ -402,7 +527,7 @@ const BOT_ORGS = [
  *    - LABEL match on `bot:verified` → `"verified-bot"`
  *    - LABEL match on `bot:web_bot_auth:verified` → `"wba-verified-bot"`
  *
- * 2. `bot-category` — one rule per Bot Control category (14 rules):
+ * 2. `bot-category` — one rule per Bot Control category (16 rules):
  *    - LABEL match on `bot:category:<cat>` → `"<cat>"`
  *
  * 3. `bot-name` — organization fallback then specific name (last match wins):

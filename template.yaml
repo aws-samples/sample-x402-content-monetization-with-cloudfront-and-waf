@@ -325,7 +325,7 @@ Resources:
     Properties:
       Name: !Sub '${AWS::StackName}-rule-group'
       Scope: CLOUDFRONT
-      Capacity: 350
+      Capacity: 500
       Description: Dedicated WAF rule group for x402 route-based access control, dynamically managed by the WAF Sync Function based on route config in SSM Parameter Store
       Rules: []
       VisibilityConfig:
@@ -355,7 +355,7 @@ Resources:
             ManagedRuleGroupStatement:
               VendorName: AWS
               Name: AWSManagedRulesBotControlRuleSet
-              Version: Version_4.0
+              Version: Version_5.0
               ManagedRuleGroupConfigs:
                 - AWSManagedRulesBotControlRuleSet:
                     InspectionLevel: COMMON

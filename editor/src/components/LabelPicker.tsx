@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import Autosuggest from '@cloudscape-design/components/autosuggest';
+import type { AutosuggestProps } from '@cloudscape-design/components/autosuggest';
 import { labelCategories, namespaceEntries, allStaticLabels } from '../label-catalog';
 import type { DynamicLabelEntry } from '../label-catalog';
 
@@ -8,20 +10,60 @@ interface Props {
   onChange: (field: string, value: string) => void;
 }
 
+/** Build grouped Autosuggest options from the label catalog. */
+function buildLabelOptions(): AutosuggestProps.OptionGroup[] {
+  return labelCategories.map(cat => ({
+    label: cat.name,
+    options: [
+      ...cat.labels.map(l => ({
+        value: l.label,
+        label: l.displayName,
+        description: l.description,
+      })),
+      ...(cat.dynamicLabels ?? []).map(d => ({
+        value: `__dyn__${d.prefix}`,
+        label: `${d.displayName} (enter value…)`,
+        description: `Prefix: ${d.prefix}`,
+      })),
+    ],
+  }));
+}
+
+function buildNamespaceOptions(): AutosuggestProps.Option[] {
+  return namespaceEntries.map(ns => ({
+    value: ns.namespace,
+    label: ns.displayName,
+    description: ns.description,
+  }));
+}
+
+const labelOptions = buildLabelOptions();
+const namespaceOptions = buildNamespaceOptions();
+
 export function LabelPicker({ field, value, onChange }: Props) {
   const [dynamicSuffix, setDynamicSuffix] = useState('');
   const [selectedDynamic, setSelectedDynamic] = useState<DynamicLabelEntry | null>(null);
+  const [filterText, setFilterText] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
 
   if (field === 'namespace') {
+    const displayValue = namespaceEntries.find(ns => ns.namespace === value)?.displayName ?? value;
     return (
-      <select value={value} onChange={e => onChange('namespace', e.target.value)} title={value || undefined}>
-        <option value="">Select namespace…</option>
-        {namespaceEntries.map(ns => (
-          <option key={ns.namespace} value={ns.namespace} title={ns.namespace}>
-            {ns.displayName}
-          </option>
-        ))}
-      </select>
+      <Autosuggest
+        value={displayValue}
+        onChange={({ detail }) => {
+          const ns = namespaceEntries.find(n => n.displayName === detail.value);
+          onChange('namespace', ns?.namespace ?? detail.value);
+        }}
+        onSelect={({ detail }) => {
+          onChange('namespace', detail.value ?? '');
+          setFilterText('');
+        }}
+        options={namespaceOptions}
+        placeholder="Select namespace…"
+        enteredTextLabel={v => `Custom: ${v}`}
+        empty="No matching namespaces"
+      />
     );
   }
 
@@ -37,9 +79,9 @@ export function LabelPicker({ field, value, onChange }: Props) {
     );
   }
 
-  // Label field: categorized picker
-  const staticMatch = allStaticLabels.find(l => l.label === value);
+  // Label field: categorized picker with dynamic label support
   const allDynamic = labelCategories.flatMap(c => c.dynamicLabels ?? []);
+  const staticMatch = allStaticLabels.find(l => l.label === value);
   const dynamicMatch = allDynamic.find(d => value.startsWith(d.prefix));
 
   if (selectedDynamic || (dynamicMatch && !staticMatch)) {
@@ -65,39 +107,39 @@ export function LabelPicker({ field, value, onChange }: Props) {
     );
   }
 
+  const displayValue = isEditing ? filterText : (staticMatch?.displayName ?? filterText);
+
   return (
     <span>
-      <select
-        value={value}
-        onChange={e => {
-          const v = e.target.value;
-          const dyn = allDynamic.find(d => v === `__dyn__${d.prefix}`);
+      <Autosuggest
+        value={displayValue}
+        onChange={({ detail }) => {
+          setIsEditing(true);
+          setFilterText(detail.value);
+        }}
+        onSelect={({ detail }) => {
+          const selected = detail.value ?? '';
+          const dyn = allDynamic.find(d => selected === `__dyn__${d.prefix}`);
           if (dyn) {
             setSelectedDynamic(dyn);
             setDynamicSuffix('');
             onChange('label', dyn.prefix);
           } else {
-            onChange('label', v);
+            onChange('label', selected);
           }
+          setFilterText('');
+          setIsEditing(false);
         }}
-        title={value || undefined}
-      >
-        <option value="">Select label…</option>
-        {labelCategories.map(cat => (
-          <optgroup key={cat.name} label={cat.name}>
-            {cat.labels.map(l => (
-              <option key={l.label} value={l.label} title={l.label}>
-                {l.displayName}
-              </option>
-            ))}
-            {cat.dynamicLabels?.map(d => (
-              <option key={d.prefix} value={`__dyn__${d.prefix}`} title={`${d.prefix}<${d.placeholder}>`}>
-                {d.displayName} (enter value…)
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
+        onBlur={() => {
+          setIsEditing(false);
+          setFilterText('');
+        }}
+        options={labelOptions}
+        placeholder="Search labels…"
+        enteredTextLabel={v => `Custom: ${v}`}
+        empty="No matching labels"
+        filteringType="auto"
+      />
       {value && <span style={{ marginLeft: 6, fontSize: 11, color: '#888', fontFamily: 'monospace' }} title={value}>{value}</span>}
     </span>
   );

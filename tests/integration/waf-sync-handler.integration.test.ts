@@ -301,9 +301,9 @@ describe('WAF Sync Handler - Integration Tests', () => {
         LockToken: TEST_LOCK_TOKEN,
       });
 
-      // Assert: Rules were generated (1 guard + 2 route rules from 2 policies + 17 bot signal rules)
+      // Assert: Rules were generated (1 guard + 2 route rules from 2 policies + 179 bot signal rules)
       const rules = updateCall.args[0].input.Rules as unknown[];
-      expect(rules).toHaveLength(20);
+      expect(rules).toHaveLength(182);
 
       // Assert: Hash was stored
       expect(ssmMock.commandCalls(PutParameterCommand)).toHaveLength(1);
@@ -339,10 +339,10 @@ describe('WAF Sync Handler - Integration Tests', () => {
       // Act
       await handler(createSsmChangeEvent());
 
-      // Assert: 1 guard + 5 route rules + 17 bot signal rules
+      // Assert: 1 guard + 5 route rules + 179 bot signal rules (3 actor-type + 16 categories + 129 orgs + 31 names)
       const updateCall = wafv2Mock.commandCalls(UpdateRuleGroupCommand)[0];
       const rules = updateCall.args[0].input.Rules as unknown as Record<string, unknown>[];
-      expect(rules).toHaveLength(23);
+      expect(rules).toHaveLength(185);
 
       // First rule is the guard rule
       expect(rules[0]).toMatchObject({
