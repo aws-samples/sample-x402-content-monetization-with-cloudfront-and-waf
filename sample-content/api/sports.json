@@ -1,0 +1,35 @@
+{
+  "category": "sports",
+  "updated": "2026-02-16T12:00:00Z",
+  "articles": [
+    {
+      "id": "sp-001",
+      "title": "Lorem Ipsum Dolor Sit Amet Consectetur",
+      "summary": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.",
+      "author": "Jane Doe",
+      "published": "2026-02-16T09:30:00Z",
+      "tags": ["sample", "demo", "lorem"]
+    },
+    {
+      "id": "sp-002",
+      "title": "Ut Enim Ad Minim Veniam Quis Nostrud",
+      "summary": "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim.",
+      "author": "John Smith",
+      "published": "2026-02-15T18:00:00Z",
+      "tags": ["sample", "demo", "ipsum"]
+    },
+    {
+      "id": "sp-003",
+      "title": "Duis Aute Irure Dolor In Reprehenderit",
+      "summary": "Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit sed quia consequuntur.",
+      "author": "Alex Johnson",
+      "published": "2026-02-15T14:00:00Z",
+      "tags": ["sample", "demo", "placeholder"]
+    }
+  ],
+  "meta": {
+    "total": 3,
+    "protocol": "x402",
+    "notice": "This data was served via the x402 payment protocol. Your agent paid USDC to access it."
+  }
+}

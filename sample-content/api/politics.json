@@ -1,0 +1,35 @@
+{
+  "category": "politics",
+  "updated": "2026-02-16T13:00:00Z",
+  "articles": [
+    {
+      "id": "po-001",
+      "title": "Curabitur Pretium Tincidunt Lacus Nulla",
+      "summary": "Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius turpis et commodo.",
+      "author": "Jane Doe",
+      "published": "2026-02-16T10:00:00Z",
+      "tags": ["sample", "demo", "lorem"]
+    },
+    {
+      "id": "po-002",
+      "title": "Nullam Varius Turpis Et Commodo Pharetra",
+      "summary": "Donec at pede. Etiam vel neque nec dui dignissim bibendum. Vivamus id enim.",
+      "author": "John Smith",
+      "published": "2026-02-15T22:00:00Z",
+      "tags": ["sample", "demo", "ipsum"]
+    },
+    {
+      "id": "po-003",
+      "title": "Integer In Mauris Eu Nibh Euismod Gravida",
+      "summary": "Pellentesque dapibus hendrerit tortor. Praesent egestas tristique nibh. Sed a libero.",
+      "author": "Alex Johnson",
+      "published": "2026-02-15T12:00:00Z",
+      "tags": ["sample", "demo", "placeholder"]
+    }
+  ],
+  "meta": {
+    "total": 3,
+    "protocol": "x402",
+    "notice": "This data was served via the x402 payment protocol. Your agent paid USDC to access it."
+  }
+}

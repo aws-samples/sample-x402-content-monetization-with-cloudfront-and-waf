@@ -1,0 +1,1064 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  x402 on AWS Edge - One-click deployable solution for content monetization using the x402 payment protocol.
+  Uses Amazon CloudFront, AWS Lambda@Edge, and AWS WAF to enable AI agents and bots to pay for content
+  access using USDC stablecoins on the Base blockchain. Configuration stored in AWS Systems Manager (SSM)
+  Parameter Store; credentials in AWS Secrets Manager; logs in Amazon CloudWatch; content in Amazon S3.
+
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Architectures:
+      - x86_64
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: x402-on-aws-edge
+    Description: One-click x402 content monetization at the AWS edge
+    Author: aws-samples
+    SpdxLicenseId: MIT-0
+    ReadmeUrl: README.md
+  BuildMethod: esbuild
+  BuildProperties:
+    Minify: true
+    Target: es2024
+    External:
+      - '@aws-sdk/*'
+
+Parameters:
+  PayToAddress:
+    Type: String
+    Description: Publisher's Ethereum wallet address that receives USDC payments
+    AllowedPattern: '^0x[0-9a-fA-F]{40}$'
+    ConstraintDescription: Must be a valid Ethereum address (0x followed by 40 hex characters)
+
+  Network:
+    Type: String
+    Description: Blockchain network for payment settlement
+    Default: 'eip155:84532'
+    AllowedValues:
+      - 'eip155:84532'
+      - 'eip155:8453'
+    ConstraintDescription: Must be either eip155:84532 (Base Sepolia testnet) or eip155:8453 (Base Mainnet)
+
+  RouteConfigJson:
+    Type: String
+    Description: >
+      Initial JSON route/pricing configuration. Defines URL path patterns with condition-based access policies.
+      Each route has a pattern and an ordered list of policies with WAF label conditions and price/block actions.
+    Default: >
+      {"version":"2","routes":[{"pattern":"/api/sports.json","policies":[{"condition":"awswaf:managed:aws:bot-control:bot:verified","action":"0.003"},{"condition":"awswaf:managed:aws:bot-control:bot:unverified","action":"0.03"},{"condition":"default","action":"block"}]},{"pattern":"/api/fashion.json","policies":[{"condition":"awswaf:managed:aws:bot-control:bot:verified","action":"0.003"},{"condition":"awswaf:managed:aws:bot-control:bot:unverified","action":"0.03"},{"condition":"default","action":"block"}]},{"pattern":"/api/politics.json","policies":[{"condition":"awswaf:managed:aws:bot-control:bot:verified","action":"0.005"},{"condition":"awswaf:managed:aws:bot-control:bot:unverified","action":"0.05"},{"condition":"default","action":"block"}]},{"pattern":"/articles/sports.html","policies":[{"condition":"awswaf:managed:aws:bot-control:bot:verified","action":"0.001"},{"condition":"awswaf:managed:aws:bot-control:bot:unverified","action":"0.01"},{"condition":"default","action":"0"}]},{"pattern":"/articles/fashion.html","policies":[{"condition":"awswaf:managed:aws:bot-control:bot:verified","action":"0.001"},{"condition":"awswaf:managed:aws:bot-control:bot:unverified","action":"0.01"},{"condition":"default","action":"0"}]},{"pattern":"/articles/politics.html","policies":[{"condition":"awswaf:managed:aws:bot-control:bot:verified","action":"0.002"},{"condition":"awswaf:managed:aws:bot-control:bot:unverified","action":"0.02"},{"condition":"default","action":"0"}]},{"pattern":"/api/**","policies":[{"condition":"awswaf:managed:aws:bot-control:bot:verified","action":"0.003"},{"condition":"awswaf:managed:aws:bot-control:bot:unverified","action":"0.03"},{"condition":"default","action":"block"}]},{"pattern":"/articles/**","policies":[{"condition":"awswaf:managed:aws:bot-control:bot:verified","action":"0.001"},{"condition":"awswaf:managed:aws:bot-control:bot:unverified","action":"0.01"},{"condition":"default","action":"0"}]},{"pattern":"/**","policies":[{"condition":"awswaf:managed:aws:bot-control:bot:verified","action":"0"},{"condition":"awswaf:managed:aws:bot-control:bot:unverified","action":"0.001"},{"condition":"default","action":"0"}]}]}
+
+  OriginDomainName:
+    Type: String
+    Description: >
+      Custom origin domain name. Leave empty to use the default S3 sample origin bucket.
+    Default: ''
+
+  FacilitatorType:
+    Type: String
+    Description: >
+      Facilitator service to use for payment verification and settlement.
+      "x402.org" uses the free x402.org facilitator (no credentials required).
+      "cdp" uses the Coinbase Developer Platform facilitator (requires CDP API key credentials).
+    Default: 'x402.org'
+    AllowedValues:
+      - 'x402.org'
+      - 'cdp'
+
+  CdpApiKeyName:
+    Type: String
+    Description: >
+      CDP (Coinbase Developer Platform) API key name. Required when FacilitatorType is "cdp".
+    Default: ''
+
+  CdpApiKeyPrivateKey:
+    Type: String
+    NoEcho: true
+    Description: >
+      CDP API key private key. Required when FacilitatorType is "cdp".
+      Stored in AWS Secrets Manager (encrypted with CMK). Value is masked
+      in CloudFormation console and events.
+    Default: ''
+
+
+Conditions:
+  UseCdpFacilitator: !Equals
+    - !Ref FacilitatorType
+    - 'cdp'
+  UseDefaultOrigin: !Equals
+    - !Ref OriginDomainName
+    - ''
+
+Resources:
+  # ============================================================
+  # KMS Encryption Key (shared for Amazon CloudWatch Logs, AWS Secrets Manager, AWS Lambda env vars)
+  # ============================================================
+
+  StackEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub '${AWS::StackName} - encryption key for S3, CloudWatch Logs, Secrets Manager, and Lambda environment variables'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowRootAccountFullAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - kms:Encrypt*
+              - kms:Decrypt*
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:Describe*
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+
+  StackEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${AWS::StackName}-encryption-key'
+      TargetKeyId: !Ref StackEncryptionKey
+
+  # ============================================================
+  # IAM Roles
+  # ============================================================
+
+  # AWS Lambda@Edge execution role - used by both Origin Request and Origin Response functions
+  LambdaEdgeExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-lambda-edge-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - edgelambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref LambdaEdgePolicy
+
+  # Managed policy for AWS Lambda@Edge functions
+  LambdaEdgePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub '${AWS::StackName} - Lambda@Edge policy for SSM, Secrets Manager, CloudWatch'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Read AWS Systems Manager parameters for edge config (PayTo, Network, Facilitator URL)
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+            Resource:
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/x402-edge/${AWS::StackName}/config/*'
+          # Read CDP credentials from AWS Secrets Manager (conditional on CDP facilitator)
+          - !If
+            - UseCdpFacilitator
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource:
+                - !Ref CdpCredentialsSecret
+            - !Ref AWS::NoValue
+          # Amazon CloudWatch Logs
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub 'arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/lambda/us-east-1.${AWS::StackName}-*'
+              - !Sub 'arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/lambda/us-east-1.${AWS::StackName}-*:*'
+
+  # AWS WAF Sync execution role - used by the regional AWS WAF Sync AWS Lambda function
+  WafSyncExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-waf-sync-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref WafSyncPolicy
+
+  # Managed policy for AWS WAF Sync function
+  WafSyncPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub '${AWS::StackName} - WAF Sync policy for SSM, WAFv2, CloudWatch'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Read Route_Config from AWS Systems Manager
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+            Resource:
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/x402-edge/${AWS::StackName}/config/routes'
+          # Read/write sync hash in AWS Systems Manager
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+              - ssm:PutParameter
+            Resource:
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/x402-edge/${AWS::StackName}/sync/last-hash'
+          # Manage AWS WAF rule group
+          - Effect: Allow
+            Action:
+              - wafv2:UpdateRuleGroup
+              - wafv2:GetRuleGroup
+            Resource:
+              - !GetAtt WafRuleGroup.Arn
+          # Amazon CloudWatch Logs
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-*'
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-*:*'
+
+  # Publisher IAM policy - allows publishers to update routing config via AWS Systems Manager
+  PublisherConfigPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${AWS::StackName}-publisher-config-policy'
+      Description: Allows publishers to update x402 routing configuration (routes, PayTo address, network, facilitator URL) via SSM Parameter Store without requiring CloudFormation stack access.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ssm:PutParameter
+            Resource:
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/x402-edge/${AWS::StackName}/config/routes'
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/x402-edge/${AWS::StackName}/config/payto'
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/x402-edge/${AWS::StackName}/config/network'
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/x402-edge/${AWS::StackName}/config/facilitator-url'
+
+  # ============================================================
+  # AWS Systems Manager Parameters (Task 19.1)
+  # ============================================================
+
+  # Route configuration - stores the JSON route/pricing config
+  SsmRouteConfig:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/x402-edge/${AWS::StackName}/config/routes'
+      Type: String
+      Value: !Ref RouteConfigJson
+      Description: >
+        x402 route/pricing configuration JSON. Defines URL path patterns with condition-based
+        access policies. Updated by publishers via SSM console or API.
+
+  # PayTo address - publisher's Ethereum wallet
+  SsmPayToAddress:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/x402-edge/${AWS::StackName}/config/payto'
+      Type: String
+      Value: !Ref PayToAddress
+      Description: Publisher's Ethereum wallet address that receives USDC payments
+
+  # Network - blockchain network for settlement
+  SsmNetwork:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/x402-edge/${AWS::StackName}/config/network'
+      Type: String
+      Value: !Ref Network
+      Description: Blockchain network for payment settlement (Base Sepolia testnet or Base Mainnet)
+
+  # Facilitator URL - conditional based on network selection
+  SsmFacilitatorUrl:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/x402-edge/${AWS::StackName}/config/facilitator-url'
+      Type: String
+      Value: !If
+        - UseCdpFacilitator
+        - 'https://api.cdp.coinbase.com/platform/v2/x402'
+        - 'https://x402.org/facilitator'
+      Description: >
+        Facilitator service URL for payment verification and settlement.
+        Set automatically based on FacilitatorType selection (CDP facilitator for "cdp", x402.org for "x402.org").
+
+  # CDP credentials - AWS Secrets Manager (only created when FacilitatorType is "cdp")
+  CdpCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: UseCdpFacilitator
+    Properties:
+      Name: !Sub 'x402-edge/${AWS::StackName}/cdp-credentials'
+      Description: CDP API key credentials for payment verification and settlement via the CDP facilitator
+      KmsKeyId: !GetAtt StackEncryptionKey.Arn
+      SecretString: !Sub '{"apiKeyName":"${CdpApiKeyName}","apiKeyPrivateKey":"${CdpApiKeyPrivateKey}"}'
+
+  # ============================================================
+  # AWS WAF Resources (Task 20)
+  # ============================================================
+
+  # AWS WAF rule group - managed dynamically by WAF_Sync_Function
+  WafRuleGroup:
+    Type: AWS::WAFv2::RuleGroup
+    Properties:
+      Name: !Sub '${AWS::StackName}-rule-group'
+      Scope: CLOUDFRONT
+      Capacity: 350
+      Description: Dedicated WAF rule group for x402 route-based access control, dynamically managed by the WAF Sync Function based on route config in SSM Parameter Store
+      Rules: []
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${AWS::StackName}-rule-group'
+
+  # AWS WAF web ACL - associates Bot Control and the dynamic rule group
+  WafWebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub '${AWS::StackName}-web-acl'
+      Scope: CLOUDFRONT
+      Description: WAF Web ACL for x402 content monetization with AWS Bot Control and route-based access control
+      DefaultAction:
+        Allow: {}
+      Rules:
+        # AWS Managed Bot Control rule group — OverrideAction set to Count so that
+        # Bot Control only labels requests (verified/unverified/bot-name) without
+        # blocking them. This allows the x402 Route Rules (Priority 1) to evaluate
+        # those labels for pricing and access decisions.
+        - Name: AWSBotControl
+          Priority: 0
+          OverrideAction:
+            Count: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesBotControlRuleSet
+              Version: Version_4.0
+              ManagedRuleGroupConfigs:
+                - AWSManagedRulesBotControlRuleSet:
+                    InspectionLevel: COMMON
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${AWS::StackName}-bot-control'
+        # Reference to the dedicated AWS WAF rule group managed by WAF_Sync_Function
+        - Name: X402RouteRules
+          Priority: 1
+          OverrideAction:
+            None: {}
+          Statement:
+            RuleGroupReferenceStatement:
+              Arn: !GetAtt WafRuleGroup.Arn
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${AWS::StackName}-route-rules'
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${AWS::StackName}-web-acl'
+
+  # AWS WAF Logging — streams blocked/allowed request details to Amazon CloudWatch Logs
+  # so dashboard log widgets can show AWS WAF-blocked traffic alongside payment events
+  WafLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub 'aws-waf-logs-${AWS::StackName}'
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt StackEncryptionKey.Arn
+
+  WafLoggingConfiguration:
+    Type: AWS::WAFv2::LoggingConfiguration
+    Properties:
+      ResourceArn: !GetAtt WafWebAcl.Arn
+      LogDestinationConfigs:
+        - !GetAtt WafLogGroup.Arn
+      LoggingFilter:
+        DefaultBehavior: DROP
+        Filters:
+          - Behavior: KEEP
+            Conditions:
+              - ActionCondition:
+                  Action: BLOCK
+            Requirement: MEETS_ANY
+
+  # ============================================================
+  # AWS Lambda@Edge Functions (Task 21)
+  # ============================================================
+
+  # Origin Request AWS Lambda@Edge function
+  OriginRequestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-origin-request'
+      Description: >
+        Lambda@Edge origin-request function for x402 payment verification. Reads the
+        WAF-injected price header, constructs payment requirements, and verifies payments
+        through the facilitator service.
+      Handler: handler.handler
+      CodeUri: src/runtime/origin-request/
+      Timeout: 30
+      MemorySize: 512
+      Role: !GetAtt LambdaEdgeExecutionRole.Arn
+      AutoPublishAlias: live
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2024
+        Sourcemap: false
+        EntryPoints:
+          - handler.ts
+        External:
+          - '@aws-sdk/*'
+
+  # Origin Response AWS Lambda@Edge function
+  OriginResponseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-origin-response'
+      Description: >
+        Lambda@Edge origin-response function for x402 payment settlement. Settles verified
+        payments through the facilitator service only when the origin returns a successful
+        response (status < 400).
+      Handler: handler.handler
+      CodeUri: src/runtime/origin-response/
+      Timeout: 30
+      MemorySize: 512
+      Role: !GetAtt LambdaEdgeExecutionRole.Arn
+      AutoPublishAlias: live
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2024
+        Sourcemap: false
+        EntryPoints:
+          - handler.ts
+        External:
+          - '@aws-sdk/*'
+
+  # ============================================================
+  # AWS WAF Sync Function and Amazon EventBridge (Task 22)
+  # ============================================================
+
+  # AWS WAF Sync AWS Lambda function (regional, not AWS Lambda@Edge)
+  WafSyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-waf-sync'
+      Description: >
+        Regional Lambda function that keeps the WAF Rule Group in sync with the Route_Config
+        stored in SSM Parameter Store. Triggered by EventBridge on SSM parameter changes
+        (near-instant propagation).
+      Handler: handler.handler
+      CodeUri: src/backoffice/waf-sync/
+      Timeout: 60
+      MemorySize: 256
+      ReservedConcurrentExecutions: 5
+      Role: !GetAtt WafSyncExecutionRole.Arn
+      KmsKeyArn: !GetAtt StackEncryptionKey.Arn
+      Environment:
+        Variables:
+          STACK_NAME: !Ref AWS::StackName
+          WAF_RULE_GROUP_NAME: !Sub '${AWS::StackName}-rule-group'
+          WAF_RULE_GROUP_ID: !GetAtt WafRuleGroup.Id
+          SSM_ROUTES_PATH: !Sub '/x402-edge/${AWS::StackName}/config/routes'
+          SSM_HASH_PATH: !Sub '/x402-edge/${AWS::StackName}/sync/last-hash'
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2024
+        Sourcemap: false
+        EntryPoints:
+          - handler.ts
+        External:
+          - '@aws-sdk/*'
+
+  # Amazon EventBridge rule for AWS Systems Manager Parameter Store change events (near-instant propagation)
+  WafSyncSsmChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-waf-sync-ssm-change'
+      Description: >
+        Triggers WAF Sync function when the Route_Config SSM parameter is updated,
+        providing near-instant propagation of routing changes to WAF.
+      EventPattern:
+        source:
+          - aws.ssm
+        detail-type:
+          - Parameter Store Change
+        detail:
+          name:
+            - !Sub '/x402-edge/${AWS::StackName}/config/routes'
+          operation:
+            - Update
+            - Create
+      Targets:
+        - Id: WafSyncTarget
+          Arn: !GetAtt WafSyncFunction.Arn
+
+
+
+  # AWS Lambda permission for Amazon EventBridge SSM change rule to invoke AWS WAF Sync
+  WafSyncSsmChangePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WafSyncFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt WafSyncSsmChangeRule.Arn
+
+  # Scheduled Amazon EventBridge rule — runs AWS WAF Sync every 5 minutes as a catch-up mechanism
+  # Ensures rules are populated on initial stack creation and recovers from missed events
+  WafSyncScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-waf-sync-schedule'
+      Description: >
+        Triggers WAF Sync function every 5 minutes to ensure WAF rules stay in sync
+        with route config. Acts as a catch-up for missed SSM change events and
+        guarantees initial rule population after stack creation.
+      ScheduleExpression: 'rate(5 minutes)'
+      Targets:
+        - Id: WafSyncScheduleTarget
+          Arn: !GetAtt WafSyncFunction.Arn
+
+  # AWS Lambda permission for scheduled Amazon EventBridge rule to invoke AWS WAF Sync
+  WafSyncSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WafSyncFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt WafSyncScheduleRule.Arn
+
+
+
+  # ============================================================
+  # Amazon S3 Origin and Amazon CloudFront Distribution (Task 23)
+  # ============================================================
+
+  # S3 bucket for sample origin content (only created when no custom origin is specified)
+  SampleOriginBucket:
+    Type: AWS::S3::Bucket
+    Condition: UseDefaultOrigin
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-sample-origin-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'aws:kms'
+              KMSMasterKeyID: !GetAtt StackEncryptionKey.Arn
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  # Amazon CloudFront Origin Access Control for Amazon S3 bucket access
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: UseDefaultOrigin
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${AWS::StackName}-oac'
+        Description: !Sub 'OAC for ${AWS::StackName} x402 sample origin'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # Amazon S3 bucket policy allowing Amazon CloudFront OAC to read objects
+  SampleOriginBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: UseDefaultOrigin
+    Properties:
+      Bucket: !Ref SampleOriginBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${SampleOriginBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt SampleOriginBucket.Arn
+              - !Sub '${SampleOriginBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  # Amazon CloudFront distribution with AWS WAF association and AWS Lambda@Edge functions
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub '${AWS::StackName} - x402 content monetization distribution'
+        Enabled: true
+        HttpVersion: http2and3
+        WebACLId: !GetAtt WafWebAcl.Arn
+        Origins:
+          - !If
+            - UseDefaultOrigin
+            - Id: SampleOrigin
+              DomainName: !GetAtt SampleOriginBucket.RegionalDomainName
+              S3OriginConfig:
+                OriginAccessIdentity: ''
+              OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+            - Id: CustomOrigin
+              DomainName: !Ref OriginDomainName
+              CustomOriginConfig:
+                HTTPSPort: 443
+                OriginProtocolPolicy: https-only
+                OriginSSLProtocols:
+                  - TLSv1.2
+        # Editor static assets bypass AWS Lambda@Edge payment verification
+        CacheBehaviors: !If
+          - UseDefaultOrigin
+          - - PathPattern: '/editor/*'
+              TargetOriginId: SampleOrigin
+              ViewerProtocolPolicy: redirect-to-https
+              AllowedMethods:
+                - GET
+                - HEAD
+              CachedMethods:
+                - GET
+                - HEAD
+              Compress: true
+              CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
+          - !Ref 'AWS::NoValue'
+        DefaultCacheBehavior:
+          TargetOriginId: !If
+            - UseDefaultOrigin
+            - SampleOrigin
+            - CustomOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          # Use CachingDisabled policy - payment requests must not be cached
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          # Use AllViewerExceptHostHeader origin request policy to forward payment headers to origin
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          LambdaFunctionAssociations:
+            - EventType: origin-request
+              LambdaFunctionARN: !Ref OriginRequestFunction.Version
+            - EventType: origin-response
+              LambdaFunctionARN: !Ref OriginResponseFunction.Version
+        DefaultRootObject: index.html
+
+  # ============================================================
+  # Amazon CloudWatch Resources (Task 24)
+  # ============================================================
+
+  # Amazon CloudWatch Logs log group for Origin Request AWS Lambda@Edge
+  OriginRequestLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/us-east-1.${AWS::StackName}-origin-request'
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt StackEncryptionKey.Arn
+
+  # Amazon CloudWatch Logs log group for Origin Response AWS Lambda@Edge
+  OriginResponseLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/us-east-1.${AWS::StackName}-origin-response'
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt StackEncryptionKey.Arn
+
+  # Amazon CloudWatch Logs log group for AWS WAF Sync Function
+  WafSyncLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-waf-sync'
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt StackEncryptionKey.Arn
+
+  # Amazon CloudWatch dashboard for x402 revenue metrics
+  X402Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub 'x402-edge-${AWS::StackName}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "log",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 3,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'settlement' and result = 'success' | stats sum(price) as total_revenue",
+                "region": "${AWS::Region}",
+                "title": "Total Revenue (USD)",
+                "view": "singleValue"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 3,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'settlement' and result = 'success' | stats sum(price) as revenue by actorType | sort revenue desc",
+                "region": "${AWS::Region}",
+                "title": "Revenue by Actor Type",
+                "view": "pie"
+              }
+            },
+            {
+              "type": "log",
+              "x": 8,
+              "y": 3,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'settlement' and result = 'success' | stats sum(price) as revenue by path | sort revenue desc",
+                "region": "${AWS::Region}",
+                "title": "Revenue by Path",
+                "view": "pie"
+              }
+            },
+            {
+              "type": "log",
+              "x": 16,
+              "y": 3,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'settlement' and result = 'success' | stats sum(price) as revenue, count(*) as transactions by path, botName | sort revenue desc",
+                "region": "${AWS::Region}",
+                "title": "Revenue: Path × Bot Name",
+                "view": "table"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 9,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'settlement' and result = 'success' | stats sum(price) as revenue by botName | sort revenue desc",
+                "region": "${AWS::Region}",
+                "title": "Revenue by Bot Name",
+                "view": "pie"
+              }
+            },
+            {
+              "type": "log",
+              "x": 8,
+              "y": 9,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'payment-requested' | stats count(*) as requests by botName | sort requests desc",
+                "region": "${AWS::Region}",
+                "title": "Payment Requests by Bot Name",
+                "view": "pie"
+              }
+            },
+            {
+              "type": "log",
+              "x": 16,
+              "y": 9,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE 'aws-waf-logs-${AWS::StackName}' | filter action = 'BLOCK' | stats count(*) as blocks by httpRequest.uri as path | sort blocks desc",
+                "region": "${AWS::Region}",
+                "title": "WAF Blocks by Path",
+                "view": "pie"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 15,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | SOURCE 'aws-waf-logs-${AWS::StackName}' | filter event in ['passthrough', 'payment-requested', 'verification', 'settlement'] or action = 'BLOCK' | stats sum(action = 'BLOCK') as Blocked, sum(event = 'passthrough') as Passthrough, sum(event = 'payment-requested') as Requested, sum(event = 'verification') as Verified, sum(event = 'settlement') as Settled by bin(5m) as t | sort t",
+                "region": "${AWS::Region}",
+                "title": "Traffic Flow: Blocked → Passthrough / Requested → Verified → Settled",
+                "view": "timeSeries",
+                "yAxis": { "left": { "label": "Count", "showUnits": false } }
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 21,
+              "width": 24,
+              "height": 8,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | SOURCE 'aws-waf-logs-${AWS::StackName}' | filter event in ['passthrough', 'payment-requested', 'verification', 'settlement'] or action = 'BLOCK' | fields @timestamp, coalesce(event, action) as Event, coalesce(result, terminatingRuleId) as Result, coalesce(path, httpRequest.uri) as Path, coalesce(price, 0) as Price, coalesce(network, '-') as Network, coalesce(actorType, 'waf-blocked') as ActorType, coalesce(botName, '-') as BotName, coalesce(clientIp, httpRequest.clientIp) as ClientIp, coalesce(error, ruleGroupList.0.terminatingRule.ruleId, '-') as Error | sort @timestamp desc | limit 50",
+                "region": "${AWS::Region}",
+                "title": "Payment & Block Events Log",
+                "view": "table"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 29,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event in ['payment-requested', 'verification', 'settlement'] and result = 'failure' | fields @timestamp, event, path, price, error | sort @timestamp desc | limit 20",
+                "region": "${AWS::Region}",
+                "title": "Failed Payments",
+                "view": "table"
+              }
+            },
+            {
+              "type": "log",
+              "x": 12,
+              "y": 29,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/${AWS::StackName}-waf-sync' | filter ispresent(message) | fields @timestamp, message, ruleCount, hash, error | sort @timestamp desc | limit 20",
+                "region": "${AWS::Region}",
+                "title": "WAF Sync Activity",
+                "view": "table"
+              }
+            }
+          ]
+        }
+
+  # ============================================================
+  # Sample Content Custom Resource (Task 26)
+  # ============================================================
+
+  # IAM role for the sample content uploader Lambda
+  SampleContentUploaderRole:
+    Type: AWS::IAM::Role
+    Condition: UseDefaultOrigin
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-content-uploader-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref SampleContentUploaderPolicy
+
+  # Managed policy for sample content uploader
+  SampleContentUploaderPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: UseDefaultOrigin
+    Properties:
+      Description: !Sub '${AWS::StackName} - Content uploader policy for S3 and CloudFront'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:ListBucket
+            Resource:
+              - !Sub '${SampleOriginBucket.Arn}'
+              - !Sub '${SampleOriginBucket.Arn}/*'
+          - Effect: Allow
+            Action:
+              - cloudfront:CreateInvalidation
+            Resource:
+              - !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+          - Effect: Allow
+            Action:
+              - kms:GenerateDataKey
+              - kms:Decrypt
+            Resource:
+              - !GetAtt StackEncryptionKey.Arn
+
+  # Lambda function that uploads sample content from sample-content/ directory to S3
+  SampleContentDeployFunction:
+    Type: AWS::Serverless::Function
+    Condition: UseDefaultOrigin
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-content-deploy'
+      Description: Uploads sample-content/ files to Amazon S3 origin bucket and invalidates Amazon CloudFront cache
+      Runtime: nodejs24.x
+      Handler: index.handler
+      Timeout: 120
+      MemorySize: 256
+      CodeUri: src/backoffice/content-deploy/
+      Role: !GetAtt SampleContentUploaderRole.Arn
+      AutoPublishAlias: live
+      KmsKeyArn: !GetAtt StackEncryptionKey.Arn
+      Environment:
+        Variables:
+          BUCKET: !Ref SampleOriginBucket
+          CF_DISTRIBUTION_ID: !Ref CloudFrontDistribution
+    Metadata:
+      BuildMethod: makefile
+
+  # Custom Resource that triggers the content deploy Lambda
+  # Re-triggers automatically when content changes because the Lambda version ARN changes
+  SampleContentDeploy:
+    Type: Custom::SampleContent
+    Condition: UseDefaultOrigin
+    DependsOn:
+      - SampleOriginBucketPolicy
+    Properties:
+      ServiceToken: !GetAtt SampleContentDeployFunction.Arn
+      # Lambda version ARN changes when code (including bundled content) changes
+      Version: !Ref SampleContentDeployFunction.Version
+
+  # ============================================================
+  # Editor Deploy Resources
+  # ============================================================
+
+  # Lambda function that uploads editor static assets to S3
+  EditorDeployFunction:
+    Type: AWS::Serverless::Function
+    Condition: UseDefaultOrigin
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-editor-deploy'
+      Description: Uploads visual route editor static assets to Amazon S3 origin bucket and invalidates Amazon CloudFront cache
+      Runtime: nodejs24.x
+      Handler: index.handler
+      Timeout: 120
+      MemorySize: 256
+      CodeUri: src/backoffice/editor-deploy/
+      AutoPublishAlias: live
+      KmsKeyArn: !GetAtt StackEncryptionKey.Arn
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref SampleOriginBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cloudfront:CreateInvalidation
+              Resource:
+                - !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - kms:GenerateDataKey
+                - kms:Decrypt
+              Resource:
+                - !GetAtt StackEncryptionKey.Arn
+      Environment:
+        Variables:
+          BUCKET: !Ref SampleOriginBucket
+          CF_DISTRIBUTION_ID: !Ref CloudFrontDistribution
+          STACK_NAME: !Ref 'AWS::StackName'
+          DEPLOY_REGION: !Ref 'AWS::Region'
+          WAF_WEB_ACL_ID: !GetAtt WafWebAcl.Id
+    Metadata:
+      BuildMethod: makefile
+
+  EditorDeploy:
+    Type: Custom::EditorDeploy
+    Condition: UseDefaultOrigin
+    DependsOn:
+      - SampleOriginBucketPolicy
+    Properties:
+      ServiceToken: !GetAtt EditorDeployFunction.Arn
+      # Lambda version ARN changes when code (including bundled editor assets) changes
+      Version: !Ref EditorDeployFunction.Version
+
+# ============================================================
+# Stack Outputs (Task 25)
+# ============================================================
+
+Outputs:
+  CloudFrontDistributionDomainName:
+    Description: Amazon CloudFront distribution domain name for accessing the monetized content
+    Value: !GetAtt CloudFrontDistribution.DomainName
+
+  CloudFrontDistributionId:
+    Description: Amazon CloudFront distribution ID
+    Value: !Ref CloudFrontDistribution
+
+  WafWebAclArn:
+    Description: AWS WAF web ACL ARN
+    Value: !GetAtt WafWebAcl.Arn
+
+  WafRuleGroupArn:
+    Description: AWS WAF rule group ARN (managed by AWS WAF Sync function)
+    Value: !GetAtt WafRuleGroup.Arn
+
+  SsmRouteConfigPath:
+    Description: AWS Systems Manager parameter path for route configuration
+    Value: !Sub '/x402-edge/${AWS::StackName}/config/routes'
+
+  SsmPayToPath:
+    Description: AWS Systems Manager parameter path for PayTo address
+    Value: !Sub '/x402-edge/${AWS::StackName}/config/payto'
+
+  SsmNetworkPath:
+    Description: AWS Systems Manager parameter path for network
+    Value: !Sub '/x402-edge/${AWS::StackName}/config/network'
+
+  SsmFacilitatorUrlPath:
+    Description: AWS Systems Manager parameter path for facilitator URL
+    Value: !Sub '/x402-edge/${AWS::StackName}/config/facilitator-url'
+
+  S3BucketName:
+    Description: Amazon S3 bucket name for sample origin content
+    Condition: UseDefaultOrigin
+    Value: !Ref SampleOriginBucket
+
+  EditorUrl:
+    Description: URL for the visual route config editor
+    Condition: UseDefaultOrigin
+    Value: !Sub 'https://${CloudFrontDistribution.DomainName}/editor/index.html'
+
+  DashboardUrl:
+    Description: Amazon CloudWatch dashboard URL for x402 revenue metrics
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=x402-edge-${AWS::StackName}'

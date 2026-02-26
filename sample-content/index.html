@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>x402 Payment Gateway - Sample Content</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #333; line-height: 1.6; }
+    h1 { color: #1a56db; }
+    h2 { color: #374151; margin-top: 2rem; }
+    code { background: #f3f4f6; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.9em; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+    pre code { background: none; color: inherit; }
+    a { color: #1a56db; }
+    .badge { display: inline-block; background: #dbeafe; color: #1a56db; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.85em; }
+  </style>
+</head>
+<body>
+  <nav><a href="/editor/index.html">&#x1F6E0; Route Editor</a></nav>
+  <h1>&#x1F4B0; x402 Payment Gateway</h1>
+  <p><span class="badge">Sample Origin</span></p>
+  <p>
+    This page is served through an Amazon CloudFront distribution protected by the
+    <strong>x402 payment protocol</strong>. AI agents and bots must pay with USDC
+    stablecoins to access gated content.
+  </p>
+
+  <h2>How It Works</h2>
+  <ol>
+    <li>AWS WAF classifies incoming traffic (human, verified bot, unverified bot).</li>
+    <li>Requests matching a priced route receive an <strong>HTTP 402</strong> response with payment requirements.</li>
+    <li>The client signs a payment and resends the request with an <code>X-PAYMENT</code> header.</li>
+    <li>Lambda@Edge verifies the payment via a facilitator, then forwards the request to the origin.</li>
+    <li>On a successful origin response, the payment is settled on-chain.</li>
+  </ol>
+
+  <h2>Testing the Payment Flow</h2>
+  <p>Use <code>curl</code> to test against your CloudFront distribution:</p>
+  <pre><code># 1. Request gated API content (expect 402 Payment Required)
+curl -i https://&lt;your-distribution&gt;.cloudfront.net/api/sports.json
+
+# 2. The 402 response body contains payment requirements:
+#    { "x402Version": 1, "accepts": [{ "scheme": "exact", ... }] }
+
+# 3. After signing a payment, include the header:
+curl -i -H "X-PAYMENT: &lt;signed-payment&gt;" \
+  https://&lt;your-distribution&gt;.cloudfront.net/api/sports.json
+
+# Try other endpoints too:
+curl -i https://&lt;your-distribution&gt;.cloudfront.net/api/fashion.json
+curl -i https://&lt;your-distribution&gt;.cloudfront.net/articles/politics.html</code></pre>
+
+  <h2>Sample Content</h2>
+  <p>Browse articles (HTML) or fetch structured data (JSON API). Depending on your route configuration, bot access may require payment.</p>
+
+  <h3>Articles</h3>
+  <ul>
+    <li><a href="/articles/sports.html">Sports</a></li>
+    <li><a href="/articles/fashion.html">Fashion</a></li>
+    <li><a href="/articles/politics.html">Politics</a></li>
+  </ul>
+
+  <h3>API Endpoints</h3>
+  <ul>
+    <li><code><a href="/api/sports.json">/api/sports.json</a></code></li>
+    <li><code><a href="/api/fashion.json">/api/fashion.json</a></code></li>
+    <li><code><a href="/api/politics.json">/api/politics.json</a></code></li>
+  </ul>
+
+  <h2>Route Editor</h2>
+  <p>
+    Configure your route pricing and access policies visually using the built-in editor:
+  </p>
+  <p><a href="/editor/index.html" class="badge" style="text-decoration:none;font-size:1em;padding:0.4rem 1rem;">&#x1F6E0; Open Route Editor</a></p>
+
+  <h2>Resources</h2>
+  <ul>
+    <li><a href="https://www.x402.org/" target="_blank">x402 Protocol Documentation</a></li>
+    <li><a href="https://github.com/coinbase/x402" target="_blank">x402 GitHub Repository</a></li>
+    <li><a href="https://docs.cdp.coinbase.com/" target="_blank">Coinbase Developer Platform</a></li>
+  </ul>
+</body>
+</html>

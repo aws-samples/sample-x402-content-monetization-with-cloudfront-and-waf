@@ -1,0 +1,77 @@
+{
+  "version": "2",
+  "routes": [
+    {
+      "pattern": "/api/sports.json",
+      "policies": [
+        { "condition": "awswaf:managed:aws:bot-control:bot:verified", "action": "0.003" },
+        { "condition": "awswaf:managed:aws:bot-control:bot:unverified", "action": "0.03" },
+        { "condition": "default", "action": "block" }
+      ]
+    },
+    {
+      "pattern": "/api/fashion.json",
+      "policies": [
+        { "condition": "awswaf:managed:aws:bot-control:bot:verified", "action": "0.003" },
+        { "condition": "awswaf:managed:aws:bot-control:bot:unverified", "action": "0.03" },
+        { "condition": "default", "action": "block" }
+      ]
+    },
+    {
+      "pattern": "/api/politics.json",
+      "policies": [
+        { "condition": "awswaf:managed:aws:bot-control:bot:verified", "action": "0.005" },
+        { "condition": "awswaf:managed:aws:bot-control:bot:unverified", "action": "0.05" },
+        { "condition": "default", "action": "block" }
+      ]
+    },
+    {
+      "pattern": "/articles/sports.html",
+      "policies": [
+        { "condition": "awswaf:managed:aws:bot-control:bot:verified", "action": "0.001" },
+        { "condition": "awswaf:managed:aws:bot-control:bot:unverified", "action": "0.01" },
+        { "condition": "default", "action": "0" }
+      ]
+    },
+    {
+      "pattern": "/articles/fashion.html",
+      "policies": [
+        { "condition": "awswaf:managed:aws:bot-control:bot:verified", "action": "0.001" },
+        { "condition": "awswaf:managed:aws:bot-control:bot:unverified", "action": "0.01" },
+        { "condition": "default", "action": "0" }
+      ]
+    },
+    {
+      "pattern": "/articles/politics.html",
+      "policies": [
+        { "condition": "awswaf:managed:aws:bot-control:bot:verified", "action": "0.002" },
+        { "condition": "awswaf:managed:aws:bot-control:bot:unverified", "action": "0.02" },
+        { "condition": "default", "action": "0" }
+      ]
+    },
+    {
+      "pattern": "/api/**",
+      "policies": [
+        { "condition": "awswaf:managed:aws:bot-control:bot:verified", "action": "0.003" },
+        { "condition": "awswaf:managed:aws:bot-control:bot:unverified", "action": "0.03" },
+        { "condition": "default", "action": "block" }
+      ]
+    },
+    {
+      "pattern": "/articles/**",
+      "policies": [
+        { "condition": "awswaf:managed:aws:bot-control:bot:verified", "action": "0.001" },
+        { "condition": "awswaf:managed:aws:bot-control:bot:unverified", "action": "0.01" },
+        { "condition": "default", "action": "0" }
+      ]
+    },
+    {
+      "pattern": "/**",
+      "policies": [
+        { "condition": "awswaf:managed:aws:bot-control:bot:verified", "action": "0" },
+        { "condition": "awswaf:managed:aws:bot-control:bot:unverified", "action": "0.001" },
+        { "condition": "default", "action": "0" }
+      ]
+    }
+  ]
+}

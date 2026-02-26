@@ -1,0 +1,35 @@
+{
+  "category": "fashion",
+  "updated": "2026-02-16T11:00:00Z",
+  "articles": [
+    {
+      "id": "fa-001",
+      "title": "Pellentesque Habitant Morbi Tristique Senectus",
+      "summary": "Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas.",
+      "author": "Jane Doe",
+      "published": "2026-02-16T08:00:00Z",
+      "tags": ["sample", "demo", "lorem"]
+    },
+    {
+      "id": "fa-002",
+      "title": "Vestibulum Tortor Quam Feugiat Vitae",
+      "summary": "Mauris placerat eleifend leo. Quisque sit amet est et sapien ullamcorper pharetra.",
+      "author": "John Smith",
+      "published": "2026-02-15T16:00:00Z",
+      "tags": ["sample", "demo", "ipsum"]
+    },
+    {
+      "id": "fa-003",
+      "title": "Donec Eu Libero Sit Amet Quam Egestas",
+      "summary": "Donec non enim in turpis pulvinar facilisis. Ut felis. Praesent dapibus neque id cursus faucibus.",
+      "author": "Alex Johnson",
+      "published": "2026-02-14T20:00:00Z",
+      "tags": ["sample", "demo", "placeholder"]
+    }
+  ],
+  "meta": {
+    "total": 3,
+    "protocol": "x402",
+    "notice": "This data was served via the x402 payment protocol. Your agent paid USDC to access it."
+  }
+}

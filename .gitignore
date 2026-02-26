@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Test coverage
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.kiro/
+.claude/
+CLAUDE.md
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# TypeScript incremental
+*.tsbuildinfo
+
+# SAM
+.aws-sam/
+samconfig.toml
+
+# Logs
+*.log
+npm-debug.log*
+
