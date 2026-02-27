@@ -186,7 +186,7 @@ SAM will prompt for these parameters:
 |---|---|---|
 | `PayToAddress` | Your Ethereum wallet address (receives USDC) | (required) |
 | `Network` | `eip155:84532` (Base Sepolia testnet) or `eip155:8453` (Base mainnet) | `eip155:84532` |
-| `FacilitatorType` | `x402.org` (free, no auth) or `cdp` (requires CDP API key) | `x402.org` |
+| `FacilitatorType` | `x402.org` (free, no auth, testnet only) or `cdp` (requires CDP API key, testnet + mainnet) | `x402.org` |
 | `RouteConfigJson` | Pricing configuration JSON (see below) | Default config |
 | `OriginDomainName` | Custom origin domain (empty = sample S3 origin) | `""` |
 | `CdpApiKeyName` | CDP API key name (only when FacilitatorType is `cdp`) | `""` |
@@ -309,12 +309,14 @@ AWS WAF Bot Control v5 includes the [AI Activity Dashboard](https://aws.amazon.c
 
 ## Facilitator Selection
 
-| FacilitatorType | Service | Auth Required |
-|---|---|---|
-| `x402.org` | `https://x402.org/facilitator` | No |
-| `cdp` | CDP Facilitator | Yes (CDP API key) |
+| FacilitatorType | Service | Auth Required | Networks |
+|---|---|---|---|
+| `x402.org` | `https://x402.org/facilitator` | No | Testnet only (Base Sepolia, Solana Devnet) |
+| `cdp` | CDP Facilitator | Yes (CDP API key) | Testnet + Mainnet (Base, Base Sepolia, Solana, Solana Devnet) |
 
-The facilitator handles payment verification and on-chain settlement. The choice is independent of the network — you can use either facilitator on testnet or mainnet.
+The facilitator handles payment verification and on-chain settlement. The `x402.org` facilitator is testnet-only — use `cdp` for mainnet deployments. See the [x402 network support](https://www.x402.org/) docs for details.
+
+> **Third-party facilitators:** The x402 ecosystem includes additional facilitators beyond the two built-in options. Browse the full list at [x402.org/ecosystem](https://www.x402.org/ecosystem?filter=facilitators). Third-party facilitators may require additional changes (e.g., authentication) that are not yet supported — contributions are welcome!
 
 ## Traffic Generator
 

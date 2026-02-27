@@ -60,8 +60,8 @@ Parameters:
     Type: String
     Description: >
       Facilitator service to use for payment verification and settlement.
-      "x402.org" uses the free x402.org facilitator (no credentials required).
-      "cdp" uses the Coinbase Developer Platform facilitator (requires CDP API key credentials).
+      "x402.org" uses the free x402.org facilitator (no credentials required, testnet only: Base Sepolia + Solana Devnet).
+      "cdp" uses the Coinbase Developer Platform facilitator (requires CDP API key, testnet + mainnet: Base, Base Sepolia, Solana, Solana Devnet).
     Default: 'x402.org'
     AllowedValues:
       - 'x402.org'
