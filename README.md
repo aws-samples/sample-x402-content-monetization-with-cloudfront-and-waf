@@ -143,7 +143,17 @@ AWS WAF includes the [AI Activity Dashboard](https://aws.amazon.com/about-aws/wh
 
 The facilitator handles payment verification and on-chain settlement. The `x402.org` facilitator is testnet-only — use `cdp` for mainnet deployments. See the [x402 network support](https://www.x402.org/) docs for details.
 
-> **Third-party facilitators:** The x402 ecosystem includes additional facilitators beyond the two built-in options. Browse the full list at [x402.org/ecosystem](https://www.x402.org/ecosystem?filter=facilitators). Third-party facilitators may require additional changes (e.g., authentication) that are not yet supported — contributions are welcome!
+### Third-Party Facilitators
+
+The x402 ecosystem includes additional facilitators beyond the two built-in options. To use a third-party facilitator, set its URL in the SSM parameter `/x402-edge/<stack-name>/config/facilitator-url` — no redeployment required.
+
+| Facilitator | URL | Auth | Networks | Notes |
+|---|---|---|---|---|
+| [xpay](https://www.xpay.sh/x402-facilitators/xpay/) | `https://facilitator.xpay.sh` | No | Base Mainnet, Base Sepolia | Serverless (AWS Lambda), gas-sponsored EIP-3009 |
+
+Browse the full list of facilitators at [x402.org/ecosystem](https://www.x402.org/ecosystem?filter=facilitators). Most HTTP-based facilitators work with this stack — simply update the SSM parameter and verify the facilitator accepts the same request format.
+
+> **Note:** Third-party facilitators are not tested or endorsed by this project. Review their documentation, security model, and supported networks before use in production.
 
 ## Getting Started
 
