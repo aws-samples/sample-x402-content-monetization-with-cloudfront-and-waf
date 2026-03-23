@@ -40,6 +40,10 @@ export function deriveBotCategory(botHeaders: Record<string, string>): string {
   return botHeaders[Headers.WAF_BOT_CATEGORY] || BotDefaults.CATEGORY;
 }
 
+export function deriveBotOrganization(botHeaders: Record<string, string>): string {
+  return botHeaders[Headers.WAF_BOT_ORGANIZATION] || BotDefaults.ORGANIZATION;
+}
+
 export function deriveBotName(botHeaders: Record<string, string>): string {
   return botHeaders[Headers.WAF_BOT_NAME] || BotDefaults.NAME;
 }
@@ -55,6 +59,7 @@ function baseFields(ctx: LogContext) {
     clientIp: ctx.clientIp,
     actorType: deriveActorType(ctx.botHeaders),
     botCategory: deriveBotCategory(ctx.botHeaders),
+    botOrganization: deriveBotOrganization(ctx.botHeaders),
     botName: deriveBotName(ctx.botHeaders),
     network: ctx.network,
   };
@@ -71,6 +76,7 @@ export function emitPassthrough(path: string, clientIp: string, botHeaders: Reco
     clientIp,
     actorType: deriveActorType(botHeaders),
     botCategory: deriveBotCategory(botHeaders),
+    botOrganization: deriveBotOrganization(botHeaders),
     botName: deriveBotName(botHeaders),
   };
   console.log(JSON.stringify(entry));

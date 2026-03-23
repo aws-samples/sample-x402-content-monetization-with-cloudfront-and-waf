@@ -52,6 +52,9 @@ export const Headers = {
   /** WAF bot category header. */
   WAF_BOT_CATEGORY: 'x-amzn-waf-bot-category',
 
+  /** WAF bot organization header. */
+  WAF_BOT_ORGANIZATION: 'x-amzn-waf-bot-organization',
+
   /** WAF bot name header. */
   WAF_BOT_NAME: 'x-amzn-waf-bot-name',
 
@@ -108,6 +111,7 @@ export const ResponseResultType = {
 export const BotDefaults = {
   ACTOR_TYPE: 'human',
   CATEGORY: 'none',
+  ORGANIZATION: 'unknown',
   NAME: 'unknown',
 } as const;
 

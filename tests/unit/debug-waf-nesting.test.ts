@@ -89,6 +89,6 @@ describe('Debug: WAF nesting issue with production config', () => {
     const guardStmt = guardRule.Statement as Record<string, unknown>;
     expect(guardStmt.OrStatement).toBeDefined();
     const orStmt = guardStmt.OrStatement as { Statements: Record<string, unknown>[] };
-    expect(orStmt.Statements).toHaveLength(8);
+    expect(orStmt.Statements).toHaveLength(10);
   });
 });

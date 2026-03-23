@@ -111,8 +111,8 @@ describe('extractRequest', () => {
     it('should extract X-PAYMENT-SIGNATURE header', () => {
       const event = makeCloudFrontEvent('/api/data', {
         host: [{ key: 'Host', value: 'example.com' }],
-        'x-payment-signature': [
-          { key: 'X-PAYMENT-SIGNATURE', value: 'sig-456' },
+        'payment-signature': [
+          { key: 'Payment-Signature', value: 'sig-456' },
         ],
       });
 
@@ -125,8 +125,8 @@ describe('extractRequest', () => {
       const event = makeCloudFrontEvent('/api/data', {
         host: [{ key: 'Host', value: 'example.com' }],
         'x-payment': [{ key: 'X-PAYMENT', value: 'primary-sig' }],
-        'x-payment-signature': [
-          { key: 'X-PAYMENT-SIGNATURE', value: 'secondary-sig' },
+        'payment-signature': [
+          { key: 'Payment-Signature', value: 'secondary-sig' },
         ],
       });
 

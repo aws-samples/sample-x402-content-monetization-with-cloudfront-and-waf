@@ -12,10 +12,10 @@ import type { WafRule, WafStatement } from '../../src/backoffice/waf-sync/types'
 
 describe('wcu-calculator', () => {
   describe('FIXED_OVERHEAD_WCU', () => {
-    it('should be 94 (8 guard + 86 bot signal)', () => {
-      expect(GUARD_RULE_WCU).toBe(8);
-      expect(BOT_SIGNAL_WCU).toBe(86);
-      expect(FIXED_OVERHEAD_WCU).toBe(94);
+    it('should be 16 (10 guard + 6 bot signal)', () => {
+      expect(GUARD_RULE_WCU).toBe(10);
+      expect(BOT_SIGNAL_WCU).toBe(6);
+      expect(FIXED_OVERHEAD_WCU).toBe(16);
     });
   });
 
@@ -229,17 +229,17 @@ describe('wcu-calculator', () => {
         action: 'block' as const,
       }));
       const result = validateWcuCapacity(rules);
-      // 10 rules × 2 WCU each = 20 + 94 overhead = 114
+      // 10 rules × 2 WCU each = 20 + 16 overhead = 36
       expect(result.valid).toBe(true);
       expect(result.routeRulesWcu).toBe(20);
-      expect(result.totalWcu).toBe(114);
+      expect(result.totalWcu).toBe(36);
       expect(result.capacity).toBe(300);
     });
 
     it('should return valid=false when exceeding capacity', () => {
       // Create enough regex rules to exceed 300 WCU
-      // Each regex rule = 3 WCU, need (300 - 94) / 3 + 1 = 70 rules
-      const rules: WafRule[] = Array.from({ length: 70 }, (_, i) => ({
+      // Each regex rule = 3 WCU, need (300 - 16) / 3 + 1 = 96 rules
+      const rules: WafRule[] = Array.from({ length: 96 }, (_, i) => ({
         name: `r${i}`,
         priority: i + 1,
         statement: {
@@ -252,14 +252,14 @@ describe('wcu-calculator', () => {
         action: 'block' as const,
       }));
       const result = validateWcuCapacity(rules);
-      // 70 × 3 = 210 + 94 = 304 > 300
+      // 96 × 3 = 288 + 16 = 304 > 300
       expect(result.valid).toBe(false);
       expect(result.totalWcu).toBe(304);
     });
 
     it('should return valid=true at exactly 300 WCU', () => {
-      // 300 - 94 = 206 WCU budget. 206 ByteMatch rules = 206 WCU.
-      const rules: WafRule[] = Array.from({ length: 206 }, (_, i) => ({
+      // 300 - 16 = 284 WCU budget. 284 ByteMatch rules = 284 WCU.
+      const rules: WafRule[] = Array.from({ length: 284 }, (_, i) => ({
         name: `r${i}`,
         priority: i + 1,
         statement: {

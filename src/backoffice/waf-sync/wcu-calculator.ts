@@ -22,19 +22,19 @@ import type { WafRule, WafStatement } from './types';
 export const RULE_GROUP_CAPACITY = 300;
 
 /** Number of guarded headers in the guard rule (OR of SizeConstraint statements). */
-export const GUARD_RULE_HEADER_COUNT = 8;
+export const GUARD_RULE_HEADER_COUNT = 10;
 
 /** Number of actor-type bot signal rules. */
 export const BOT_SIGNAL_ACTOR_TYPE_COUNT = 3;
 
-/** Number of bot category signal rules. */
-export const BOT_SIGNAL_CATEGORY_COUNT = 16;
+/** Number of bot category signal rules (1 dynamic label namespace rule). */
+export const BOT_SIGNAL_CATEGORY_COUNT = 1;
 
-/** Number of bot organization signal rules. */
-export const BOT_SIGNAL_ORG_COUNT = 36;
+/** Number of bot organization signal rules (1 dynamic label namespace rule). */
+export const BOT_SIGNAL_ORG_COUNT = 1;
 
-/** Number of bot name signal rules. */
-export const BOT_SIGNAL_NAME_COUNT = 31;
+/** Number of bot name signal rules (1 dynamic label namespace rule). */
+export const BOT_SIGNAL_NAME_COUNT = 1;
 
 /** WCU consumed by the guard rule (OR of SizeConstraint statements, 1 WCU each). */
 export const GUARD_RULE_WCU = GUARD_RULE_HEADER_COUNT;

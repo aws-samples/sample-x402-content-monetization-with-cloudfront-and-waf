@@ -258,6 +258,8 @@ const GUARDED_HEADERS = [
   Headers.WAF_ACTOR_TYPE,
   BotSignalHeaders.BOT_CATEGORY,
   Headers.WAF_BOT_CATEGORY,
+  BotSignalHeaders.BOT_ORGANIZATION,
+  Headers.WAF_BOT_ORGANIZATION,
   BotSignalHeaders.BOT_NAME,
   Headers.WAF_BOT_NAME,
 ];
@@ -308,153 +310,31 @@ function buildGuardRule(): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 
 /**
- * All 16 Bot Control v5.0 category labels. Each maps to a WAF rule that inserts
- * `x-amzn-waf-bot-category: <category>` when the label is present.
- */
-const BOT_CATEGORIES = [
-  'search_engine',
-  'ai',
-  'content_fetcher',
-  'social_media',
-  'advertising',
-  'seo',
-  'monitoring',
-  'security',
-  'scraping_framework',
-  'archiver',
-  'http_library',
-  'link_checker',
-  'email_client',
-  'page_preview',
-  'webhooks',
-  'miscellaneous',
-] as const;
-
-/**
- * Curated subset of bot names from AWS WAF Bot Control.
- * Each maps to a WAF rule that inserts `x-amzn-waf-bot-name: <name>`.
- * These rules evaluate after organization rules so that the specific
- * bot name overwrites the org fallback (last-match-wins).
- */
-const BOT_NAMES = [
-  // AI bots
-  'claudebot',
-  'anthropic',
-  'bedrockbot',
-  'cohere',
-  'bytespider',
-  'omgili',
-  'diffbot',
-  'timpibot',
-  'perplexitybot',
-  'perplexity-user',
-  'metaexternalagent',
-  'meta-externalagent',
-  'meta-webindexer',
-  'duckassistbot',
-  'nova_act',
-  // Search engine bots
-  'searchbot',
-  'evensi',
-  'yisouspider',
-  'naver',
-  // Advertising bots
-  'naver_ads',
-  'meta-externalads',
-  // Content fetcher bots
-  'naver_preview',
-  'censys',
-  'imessage_preview',
-  'imagesift',
-  'meta-externalfetcher',
-  'google_cloud_vertex_bot',
-  // Social media bots
-  'snapchat',
-  'tiktok',
-  // HTTP library bots
-  'fasthttp',
-  // Other
-  'nytimes',
-] as const;
-
-/**
- * Example curated subset of bot organizations from AWS WAF Bot Control v5.0.
- * Each maps to a WAF rule that inserts `x-amzn-waf-bot-name: org:<org>`.
- * These rules evaluate before name rules to act as a fallback — if a bot
- * has both a name and an organization label, the name rule overwrites.
- *
- * This is an example list — curate it to match the organizations most
- * relevant to your use case. Each entry consumes one custom request header
- * slot in the WAF rule group, so the total number of InsertHeaders across
- * all rules (actor-type + category + orgs + names + route pricing rules)
- * must stay within the WAF rule group quota for custom request headers.
- */
-const BOT_ORGS = [
-  // AI & tech
-  'amazon',
-  'anthropic',
-  'apple',
-  'bytedance',
-  'cognition',
-  'facebook',
-  'google',
-  'kagiinc',
-  'microsoft',
-  'openai',
-  'perplexity',
-  // Search engines
-  'baidu',
-  'duckduckgo',
-  'naver',
-  'qwant',
-  'seznam',
-  'sogou',
-  'yahoo',
-  'yandex',
-  // SEO & web crawling
-  'ahrefs',
-  'common_crawl',
-  'dataforseo',
-  'majestic',
-  'semrush',
-  // Social media
-  'line',
-  'pinterest',
-  'snap',
-  'telegram',
-  'x',
-  // Advertising
-  'criteo',
-  'taboola',
-  'the_trade_desk',
-  // Monitoring & observability
-  'datadog',
-  'new_relic',
-  'sentry',
-  // Other notable
-  'oracle',
-] as const;
-
-/**
  * Build WAF rules that forward Bot Control labels to the origin as custom
  * headers. These rules use Count action with InsertHeaders so they don't
  * terminate evaluation and the headers reach Lambda@Edge.
  *
- * Three header families are generated:
+ * Uses WAF dynamic labels (`${namespace:}` interpolation) to forward all
+ * values in each Bot Control namespace with a single rule per namespace,
+ * instead of one rule per individual value. This eliminates curated lists
+ * and automatically captures new bots/categories/organizations as AWS
+ * adds them to Bot Control.
  *
- * 1. `actor-type` — trust level cascade (last match wins via header overwrite):
+ * Six rules are generated:
+ *
+ * 1. `actor-type` — trust level cascade (3 rules, last match wins):
  *    - NAMESPACE match on `bot:category:` → `"unverified-bot"`
  *    - LABEL match on `bot:verified` → `"verified-bot"`
  *    - LABEL match on `bot:web_bot_auth:verified` → `"wba-verified-bot"`
  *
- * 2. `bot-category` — one rule per Bot Control category (16 rules):
- *    - LABEL match on `bot:category:<cat>` → `"<cat>"`
+ * 2. `bot-category` — dynamic label forwarding (1 rule):
+ *    - NAMESPACE match on `bot:category:` → `"${bot:category:}"`
  *
- * 3. `bot-name` — organization fallback then specific name (last match wins):
- *    - LABEL match on `bot:organization:<org>` → `"org:<org>"` (fallback)
- *    - LABEL match on `bot:name:<name>` → `"<name>"` (overwrites org)
+ * 3. `bot-organization` — dynamic label forwarding (1 rule):
+ *    - NAMESPACE match on `bot:organization:` → `"${bot:organization:}"`
  *
- * Priorities start after the highest route rule priority to avoid conflicts.
+ * 4. `bot-name` — dynamic label forwarding (1 rule):
+ *    - NAMESPACE match on `bot:name:` → `"${bot:name:}"`
  *
  * @param routeRules - The translated route rules (used to determine starting priority)
  * @returns Array of AWS WAFv2 rule objects for bot signal forwarding
@@ -524,56 +404,49 @@ function buildBotSignalForwardingRules(routeRules: WafRule[]): Record<string, un
     VisibilityConfig: makeVisibility('bot-signal-actor-type-wba-verified'),
   });
 
-  // --- bot-category rules (one per category) ---
+  // --- dynamic label forwarding (one namespace rule per signal family) ---
 
-  for (const category of BOT_CATEGORIES) {
-    rules.push({
-      Name: `bot-signal-category-${category}`,
-      Priority: priority++,
-      Statement: {
-        LabelMatchStatement: {
-          Scope: LabelMatchScope.LABEL,
-          Key: `${WafLabels.CATEGORY}${category}`,
-        },
+  // Bot category: resolves to the matched category value (e.g., "ai", "search_engine")
+  rules.push({
+    Name: 'bot-signal-forward-category',
+    Priority: priority++,
+    Statement: {
+      LabelMatchStatement: {
+        Scope: LabelMatchScope.NAMESPACE,
+        Key: WafLabels.CATEGORY,
       },
-      Action: makeCountWithHeader(BotSignalHeaders.BOT_CATEGORY, category),
-      VisibilityConfig: makeVisibility(`bot-signal-category-${category}`),
-    });
-  }
+    },
+    Action: makeCountWithHeader(BotSignalHeaders.BOT_CATEGORY, `\${${WafLabels.CATEGORY}}`),
+    VisibilityConfig: makeVisibility('bot-signal-forward-category'),
+  });
 
-  // --- bot-name: organization fallback rules (evaluated first, lower priority) ---
-
-  for (const org of BOT_ORGS) {
-    rules.push({
-      Name: `bot-signal-org-${org}`,
-      Priority: priority++,
-      Statement: {
-        LabelMatchStatement: {
-          Scope: LabelMatchScope.LABEL,
-          Key: `${WafLabels.ORGANIZATION}${org}`,
-        },
+  // Bot organization: resolves to the matched organization value (e.g., "anthropic", "google")
+  rules.push({
+    Name: 'bot-signal-forward-organization',
+    Priority: priority++,
+    Statement: {
+      LabelMatchStatement: {
+        Scope: LabelMatchScope.NAMESPACE,
+        Key: WafLabels.ORGANIZATION,
       },
-      Action: makeCountWithHeader(BotSignalHeaders.BOT_NAME, `org:${org}`),
-      VisibilityConfig: makeVisibility(`bot-signal-org-${org}`),
-    });
-  }
+    },
+    Action: makeCountWithHeader(BotSignalHeaders.BOT_ORGANIZATION, `\${${WafLabels.ORGANIZATION}}`),
+    VisibilityConfig: makeVisibility('bot-signal-forward-organization'),
+  });
 
-  // --- bot-name: specific name rules (evaluated last, overwrites org fallback) ---
-
-  for (const name of BOT_NAMES) {
-    rules.push({
-      Name: `bot-signal-name-${name}`,
-      Priority: priority++,
-      Statement: {
-        LabelMatchStatement: {
-          Scope: LabelMatchScope.LABEL,
-          Key: `${WafLabels.NAME}${name}`,
-        },
+  // Bot name: resolves to the matched bot name value (e.g., "claudebot", "perplexitybot")
+  rules.push({
+    Name: 'bot-signal-forward-name',
+    Priority: priority++,
+    Statement: {
+      LabelMatchStatement: {
+        Scope: LabelMatchScope.NAMESPACE,
+        Key: WafLabels.NAME,
       },
-      Action: makeCountWithHeader(BotSignalHeaders.BOT_NAME, name),
-      VisibilityConfig: makeVisibility(`bot-signal-name-${name}`),
-    });
-  }
+    },
+    Action: makeCountWithHeader(BotSignalHeaders.BOT_NAME, `\${${WafLabels.NAME}}`),
+    VisibilityConfig: makeVisibility('bot-signal-forward-name'),
+  });
 
   return rules;
 }

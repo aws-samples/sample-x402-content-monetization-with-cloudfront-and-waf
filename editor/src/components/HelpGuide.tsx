@@ -44,7 +44,7 @@ export function HelpGuide() {
         <h3>Limitations</h3>
         <ul style={{ paddingLeft: 20 }}>
           <li><strong>Condition nesting depth: max 5 levels.</strong> AWS WAF limits how deeply AND/OR/NOT groups can be nested. The editor will warn you if you exceed this.</li>
-          <li><strong>WAF capacity: 350 WCU.</strong> Each policy becomes a WAF rule. ~62 WCU is reserved for system rules (guard rule + bot signal forwarding), leaving ~288 WCU for your route policies. The capacity bar above the route list shows current usage.</li>
+          <li><strong>WAF capacity: 300 WCU.</strong> Each policy becomes a WAF rule. ~16 WCU is reserved for system rules (guard rule + bot signal forwarding), leaving ~284 WCU for your route policies. The capacity bar above the route list shows current usage.</li>
           <li><strong>Max 20 policies per route.</strong> If you need more, consider splitting into multiple routes with more specific patterns.</li>
           <li><strong>One default policy per route, must be last.</strong> The default matches everything — any policies after it are unreachable.</li>
           <li><strong>Route order matters.</strong> Routes are evaluated top to bottom. The first matching route wins. Put specific patterns before broad ones.</li>

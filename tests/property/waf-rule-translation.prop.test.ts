@@ -285,18 +285,18 @@ describe('Property 3: WAF rule translation correctness with extended conditions'
           const topStatements = rule.statement.andStatement!.statements;
           expect(topStatements.some((s) => s.notStatement)).toBe(true);
 
-          // Find the URI byte-match among the children
-          const uriChild = topStatements.find((s) => s.byteMatchStatement);
+          // Find the URI match statement among the children (byte-match or regex-match)
+          const uriChild = topStatements.find((s) => s.byteMatchStatement || s.regexMatchStatement);
 
           if (policy.condition === 'default') {
             // AND(NOT_scopedown, URI) — 2 children
             expect(uriChild).toBeDefined();
-            expect(uriChild!.byteMatchStatement).toEqual(expectedUriStatement);
+            expect(uriChild).toEqual(expectedUriStatement);
             expect(topStatements.length).toBe(2);
           } else {
             // Flattened: AND(NOT_scopedown, URI, condition) — 3+ children
             expect(uriChild).toBeDefined();
-            expect(uriChild!.byteMatchStatement).toEqual(expectedUriStatement);
+            expect(uriChild).toEqual(expectedUriStatement);
             expect(topStatements.length).toBeGreaterThanOrEqual(3);
           }
         }
