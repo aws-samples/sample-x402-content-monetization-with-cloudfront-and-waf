@@ -156,7 +156,10 @@ export interface SettlementLogEntry {
   /** Bot category from WAF Bot Control (e.g., `"ai"`, `"search_engine"`) or `"none"`. */
   botCategory: string;
 
-  /** Bot name from WAF Bot Control (e.g., `"claudebot"`, `"org:openai"`) or `"unknown"`. */
+  /** Bot organization from WAF Bot Control (e.g., `"anthropic"`, `"google"`) or `"unknown"`. */
+  botOrganization: string;
+
+  /** Bot name from WAF Bot Control (e.g., `"claudebot"`, `"perplexitybot"`) or `"unknown"`. */
   botName: string;
 
   /** Client IP address (may be anonymized). */
@@ -189,7 +192,9 @@ export interface VerificationLogEntry {
   actorType: string;
   /** Bot category from WAF Bot Control (e.g., `"ai"`, `"search_engine"`) or `"none"`. */
   botCategory: string;
-  /** Bot name from WAF Bot Control (e.g., `"claudebot"`, `"org:openai"`) or `"unknown"`. */
+  /** Bot organization from WAF Bot Control (e.g., `"anthropic"`, `"google"`) or `"unknown"`. */
+  botOrganization: string;
+  /** Bot name from WAF Bot Control (e.g., `"claudebot"`, `"perplexitybot"`) or `"unknown"`. */
   botName: string;
   /** Blockchain network (e.g., `"eip155:84532"`). */
   network: string;
@@ -211,7 +216,9 @@ export interface PaymentRequestedLogEntry {
   actorType: string;
   /** Bot category from WAF Bot Control (e.g., `"ai"`, `"search_engine"`) or `"none"`. */
   botCategory: string;
-  /** Bot name from WAF Bot Control (e.g., `"claudebot"`, `"org:openai"`) or `"unknown"`. */
+  /** Bot organization from WAF Bot Control (e.g., `"anthropic"`, `"google"`) or `"unknown"`. */
+  botOrganization: string;
+  /** Bot name from WAF Bot Control (e.g., `"claudebot"`, `"perplexitybot"`) or `"unknown"`. */
   botName: string;
   /** Blockchain network (e.g., `"eip155:84532"`). */
   network: string;
@@ -227,6 +234,8 @@ export interface PassthroughLogEntry {
   actorType: string;
   /** Bot category from WAF Bot Control (e.g., `"ai"`, `"search_engine"`) or `"none"`. */
   botCategory: string;
-  /** Bot name from WAF Bot Control (e.g., `"claudebot"`, `"org:openai"`) or `"unknown"`. */
+  /** Bot organization from WAF Bot Control (e.g., `"anthropic"`, `"google"`) or `"unknown"`. */
+  botOrganization: string;
+  /** Bot name from WAF Bot Control (e.g., `"claudebot"`, `"perplexitybot"`) or `"unknown"`. */
   botName: string;
 }

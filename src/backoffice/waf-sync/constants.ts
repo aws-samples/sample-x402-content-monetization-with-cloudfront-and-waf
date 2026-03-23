@@ -44,6 +44,7 @@ export const ActorType = {
 export const BotSignalHeaders = {
   ACTOR_TYPE: 'actor-type',
   BOT_CATEGORY: 'bot-category',
+  BOT_ORGANIZATION: 'bot-organization',
   BOT_NAME: 'bot-name',
 } as const;
 

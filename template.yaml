@@ -784,9 +784,9 @@ Resources:
               "width": 8,
               "height": 6,
               "properties": {
-                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'settlement' and result = 'success' | stats sum(price) as revenue, count(*) as transactions by path, botName | sort revenue desc",
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'settlement' and result = 'success' | stats sum(price) as revenue, count(*) as transactions by path, coalesce(botName, botOrganization, 'unknown') as bot | sort revenue desc",
                 "region": "${AWS::Region}",
-                "title": "Revenue: Path × Bot Name",
+                "title": "Revenue: Path × Bot",
                 "view": "table"
               }
             },
@@ -797,9 +797,9 @@ Resources:
               "width": 8,
               "height": 6,
               "properties": {
-                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'settlement' and result = 'success' | stats sum(price) as revenue by botName | sort revenue desc",
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'settlement' and result = 'success' | stats sum(price) as revenue by coalesce(botName, botOrganization, 'unknown') as bot | sort revenue desc",
                 "region": "${AWS::Region}",
-                "title": "Revenue by Bot Name",
+                "title": "Revenue by Bot",
                 "view": "pie"
               }
             },
@@ -810,9 +810,9 @@ Resources:
               "width": 8,
               "height": 6,
               "properties": {
-                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'payment-requested' | stats count(*) as requests by botName | sort requests desc",
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | filter event = 'payment-requested' | stats count(*) as requests by coalesce(botName, botOrganization, 'unknown') as bot | sort requests desc",
                 "region": "${AWS::Region}",
-                "title": "Payment Requests by Bot Name",
+                "title": "Payment Requests by Bot",
                 "view": "pie"
               }
             },
@@ -850,7 +850,7 @@ Resources:
               "width": 24,
               "height": 8,
               "properties": {
-                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | SOURCE 'aws-waf-logs-${AWS::StackName}' | filter event in ['passthrough', 'payment-requested', 'verification', 'settlement'] or action = 'BLOCK' | fields @timestamp, coalesce(event, action) as Event, coalesce(result, terminatingRuleId) as Result, coalesce(path, httpRequest.uri) as Path, coalesce(price, 0) as Price, coalesce(network, '-') as Network, coalesce(actorType, 'waf-blocked') as ActorType, coalesce(botName, '-') as BotName, coalesce(clientIp, httpRequest.clientIp) as ClientIp, coalesce(error, ruleGroupList.0.terminatingRule.ruleId, '-') as Error | sort @timestamp desc | limit 50",
+                "query": "SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-request' | SOURCE '/aws/lambda/us-east-1.${AWS::StackName}-origin-response' | SOURCE 'aws-waf-logs-${AWS::StackName}' | filter event in ['passthrough', 'payment-requested', 'verification', 'settlement'] or action = 'BLOCK' | fields @timestamp, coalesce(event, action) as Event, coalesce(result, terminatingRuleId) as Result, coalesce(path, httpRequest.uri) as Path, coalesce(price, 0) as Price, coalesce(network, '-') as Network, coalesce(actorType, 'waf-blocked') as ActorType, coalesce(botName, '-') as BotName, coalesce(botOrganization, '-') as BotOrg, coalesce(clientIp, httpRequest.clientIp) as ClientIp, coalesce(error, ruleGroupList.0.terminatingRule.ruleId, '-') as Error | sort @timestamp desc | limit 50",
                 "region": "${AWS::Region}",
                 "title": "Payment & Block Events Log",
                 "view": "table"
