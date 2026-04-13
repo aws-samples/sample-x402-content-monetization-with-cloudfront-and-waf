@@ -7,13 +7,19 @@
  * @see https://github.com/coinbase/x402/tree/main/examples/typescript/servers/cloudfront-lambda-edge
  */
 
-import type { RoutesConfig, FacilitatorConfig } from '@x402/core/server';
+import type {
+  RoutesConfig,
+  FacilitatorConfig,
+} from '@x402/core/server';
+import type { Network } from '@x402/core/types';
 import {
   x402ResourceServer,
   x402HTTPResourceServer,
   HTTPFacilitatorClient,
 } from '@x402/core/server';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { ExactSvmScheme } from '@x402/svm/exact/server';
+import { isEvmNetwork, isSolanaNetwork } from './payment-config';
 
 /**
  * Configuration for creating an x402 server.
@@ -22,7 +28,7 @@ import { ExactEvmScheme } from '@x402/evm/exact/server';
 export interface X402ServerConfig {
   /** Facilitator URL (e.g., 'https://x402.org/facilitator') */
   facilitatorUrl: string;
-  /** Network ID (e.g., 'eip155:84532' for Base Sepolia) */
+  /** Network ID (e.g., 'eip155:84532' or 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1') */
   network: string;
   /** Route configuration defining which paths require payment */
   routes: RoutesConfig;
@@ -44,10 +50,17 @@ export async function createX402Server(
   );
 
   const resourceServer = new x402ResourceServer(facilitator);
-  resourceServer.register(
-    config.network as `${string}:${string}`,
-    new ExactEvmScheme(),
-  );
+  const network = config.network as Network;
+
+  if (isEvmNetwork(config.network)) {
+    resourceServer.register(network, new ExactEvmScheme());
+  } else if (isSolanaNetwork(config.network)) {
+    resourceServer.register(network, new ExactSvmScheme());
+  } else {
+    throw new Error(
+      `Unsupported x402 network "${config.network}". Expected an eip155:* or solana:* network.`,
+    );
+  }
 
   const httpServer = new x402HTTPResourceServer(resourceServer, config.routes);
   await httpServer.initialize();

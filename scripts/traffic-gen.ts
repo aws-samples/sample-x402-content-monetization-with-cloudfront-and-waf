@@ -3,7 +3,7 @@
  * x402 Traffic Generator
  *
  * Sends real HTTP traffic to a deployed CloudFront distribution, including
- * actual on-chain x402 payments via CDP Server Wallet.
+ * actual on-chain x402 payments on EVM and Solana networks.
  *
  * Usage:
  *   npx tsx scripts/traffic-gen.ts [options]
@@ -17,9 +17,10 @@
  *                     traffic trends (default: 0 = one-shot playlist)
  *
  * Environment variables (or .env file in scripts/):
- *   CDP_API_KEY_ID       CDP API Key ID
- *   CDP_API_KEY_SECRET   CDP API Key Secret
- *   CDP_WALLET_SECRET    CDP Wallet Secret
+ *   CDP_API_KEY_ID       CDP API Key ID for EVM payments on Base
+ *   CDP_API_KEY_SECRET   CDP API Key Secret for EVM payments on Base
+ *   CDP_WALLET_SECRET    CDP Wallet Secret for EVM payments on Base
+ *   SVM_PRIVATE_KEY      Base58-encoded 64-byte Solana secret key
  */
 
 import { parseArgs } from 'node:util';
@@ -28,6 +29,9 @@ import { config } from 'dotenv';
 import { CdpClient } from '@coinbase/cdp-sdk';
 import { x402Client, wrapFetchWithPayment } from '@x402/fetch';
 import { registerExactEvmScheme } from '@x402/evm/exact/client';
+import { ExactSvmScheme } from '@x402/svm/exact/client';
+import { createKeyPairSignerFromBytes } from '@solana/kit';
+import { base58 } from '@scure/base';
 import { toAccount } from 'viem/accounts';
 
 // Load .env from scripts/ directory, then project root
@@ -54,40 +58,73 @@ const DELAY_MS = parseInt(args.delay!, 10);
 const PAYMENTS_ENABLED = !args['no-pay'];
 const DURATION_MS = parseFloat(args.duration!) * 60_000;
 
-// ── CDP + x402 Client Setup ─────────────────────────────────────────────────
+// ── x402 Client Setup ────────────────────────────────────────────────────────
 
 async function initPaymentClient(): Promise<typeof fetch> {
   const cdpApiKeyId = process.env.CDP_API_KEY_ID;
   const cdpApiKeySecret = process.env.CDP_API_KEY_SECRET;
   const cdpWalletSecret = process.env.CDP_WALLET_SECRET;
+  const client = new x402Client();
+  let registeredSchemes = 0;
 
-  if (!cdpApiKeyId || !cdpApiKeySecret || !cdpWalletSecret) {
+  const hasAnyEvmCredential = !!(
+    cdpApiKeyId ||
+    cdpApiKeySecret ||
+    cdpWalletSecret
+  );
+  const hasCompleteEvmCredentials = !!(
+    cdpApiKeyId &&
+    cdpApiKeySecret &&
+    cdpWalletSecret
+  );
+
+  if (hasAnyEvmCredential && !hasCompleteEvmCredentials) {
     const missing = [
       !cdpApiKeyId && 'CDP_API_KEY_ID',
       !cdpApiKeySecret && 'CDP_API_KEY_SECRET',
       !cdpWalletSecret && 'CDP_WALLET_SECRET',
     ].filter(Boolean).join(', ');
-    console.error(`\n❌ Missing CDP credentials: ${missing}`);
-    console.error('   Set them in scripts/.env or as environment variables.\n');
+    console.error(`\n❌ Incomplete EVM signer configuration: ${missing}`);
+    console.error('   Provide all CDP credentials or remove the partial config.\n');
     process.exit(1);
   }
 
-  const cdp = new CdpClient({
-    apiKeyId: cdpApiKeyId,
-    apiKeySecret: cdpApiKeySecret,
-    walletSecret: cdpWalletSecret,
-  });
-  console.log('✅ Initialized CDP client');
+  if (hasCompleteEvmCredentials) {
+    const cdp = new CdpClient({
+      apiKeyId: cdpApiKeyId,
+      apiKeySecret: cdpApiKeySecret,
+      walletSecret: cdpWalletSecret,
+    });
+    console.log('✅ Initialized CDP client for EVM payments');
 
-  const serverAccount = await cdp.evm.getOrCreateAccount({
-    name: 'x402-traffic-gen',
-  });
-  console.log(`🔑 Wallet: ${serverAccount.address}`);
+    const serverAccount = await cdp.evm.getOrCreateAccount({
+      name: 'x402-traffic-gen',
+    });
+    console.log(`🔑 EVM wallet: ${serverAccount.address}`);
 
-  const account = toAccount(serverAccount);
-  const client = new x402Client();
-  registerExactEvmScheme(client, { signer: account });
-  console.log('✅ Registered EVM payment scheme (Base Sepolia)\n');
+    registerExactEvmScheme(client, { signer: toAccount(serverAccount) });
+    registeredSchemes++;
+    console.log('✅ Registered EVM payment scheme');
+  }
+
+  const svmPrivateKey = process.env.SVM_PRIVATE_KEY;
+  if (svmPrivateKey) {
+    const signer = await createKeyPairSignerFromBytes(base58.decode(svmPrivateKey));
+    client.register('solana:*', new ExactSvmScheme(signer));
+    registeredSchemes++;
+    console.log(`🔑 Solana wallet: ${signer.address}`);
+    console.log('✅ Registered Solana payment scheme');
+  }
+
+  if (registeredSchemes === 0) {
+    console.error('\n❌ No payment signer configured.');
+    console.error('   For Base payments, set CDP_API_KEY_ID, CDP_API_KEY_SECRET, and CDP_WALLET_SECRET.');
+    console.error('   For Solana payments, set SVM_PRIVATE_KEY.');
+    console.error('   You can also use --no-pay for a dry run.\n');
+    process.exit(1);
+  }
+
+  console.log('');
 
   return wrapFetchWithPayment(fetch, client);
 }

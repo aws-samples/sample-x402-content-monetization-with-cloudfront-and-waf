@@ -87,6 +87,9 @@ const mockEdgeConfig = {
   facilitatorUrl: 'https://x402.org/facilitator',
 };
 
+const SOLANA_DEVNET = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1';
+const SOLANA_MAINNET = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp';
+
 // ---------------------------------------------------------------------------
 // Generators
 // ---------------------------------------------------------------------------
@@ -361,13 +364,43 @@ function configureMockForPassThrough(settlementData?: string): void {
  *
  */
 describe('Property 5: 402 response contains correct payment requirements', () => {
-  /** Generate a valid Ethereum address (40 hex chars with 0x prefix). */
-  const arbEthereumAddress: fc.Arbitrary<string> = fc
+  /** Generate a valid Ethereum-compatible address (40 hex chars with 0x prefix). */
+  const arbEvmAddress: fc.Arbitrary<string> = fc
     .array(fc.integer({ min: 0, max: 15 }), { minLength: 40, maxLength: 40 })
     .map((digits) => '0x' + digits.map((d) => d.toString(16)).join(''));
 
-  /** Generate a valid network value (testnet or mainnet). */
-  const arbNetwork: fc.Arbitrary<string> = fc.constantFrom('eip155:84532', 'eip155:8453');
+  /** Generate a valid Solana base58 address. */
+  const arbSolanaAddress: fc.Arbitrary<string> = fc
+    .array(fc.constantFrom(
+      '1','2','3','4','5','6','7','8','9',
+      'A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z',
+      'a','b','c','d','e','f','g','h','i','j','k','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
+    ), { minLength: 32, maxLength: 44 })
+    .map((chars) => chars.join(''));
+
+  /** Generate a valid payTo/network/facilitator combination across Base and Solana. */
+  const arbPaymentTarget = fc.oneof(
+    fc.record({
+      payTo: arbEvmAddress,
+      network: fc.constant('eip155:84532'),
+      facilitatorUrl: fc.constantFrom('https://x402.org/facilitator', 'https://cdp.facilitator.example.com'),
+    }),
+    fc.record({
+      payTo: arbEvmAddress,
+      network: fc.constant('eip155:8453'),
+      facilitatorUrl: fc.constant('https://cdp.facilitator.example.com'),
+    }),
+    fc.record({
+      payTo: arbSolanaAddress,
+      network: fc.constant(SOLANA_DEVNET),
+      facilitatorUrl: fc.constantFrom('https://x402.org/facilitator', 'https://cdp.facilitator.example.com'),
+    }),
+    fc.record({
+      payTo: arbSolanaAddress,
+      network: fc.constant(SOLANA_MAINNET),
+      facilitatorUrl: fc.constant('https://cdp.facilitator.example.com'),
+    }),
+  );
 
   /**
    * Convert a price string to atomic units (USDC has 6 decimals).
@@ -404,26 +437,22 @@ describe('Property 5: 402 response contains correct payment requirements', () =>
     await fc.assert(
       fc.asyncProperty(
         arbPositivePrice,
-        arbEthereumAddress,
-        arbNetwork,
+        arbPaymentTarget,
         arbPath,
         arbHost,
         arbClientIp,
         async (
           price: string,
-          payTo: string,
-          network: string,
+          target: { payTo: string; network: string; facilitatorUrl: string },
           path: string,
           host: string,
           clientIp: string,
         ) => {
           // Arrange: Configure mock to return the generated config
           const generatedConfig = {
-            payTo,
-            network,
-            facilitatorUrl: network === 'eip155:8453'
-              ? 'https://cdp.coinbase.com/facilitator'
-              : 'https://x402.org/facilitator',
+            payTo: target.payTo,
+            network: target.network,
+            facilitatorUrl: target.facilitatorUrl,
           };
           mockGetEdgeConfig.mockResolvedValue(generatedConfig);
 
@@ -464,7 +493,7 @@ describe('Property 5: 402 response contains correct payment requirements', () =>
           expect(accept.scheme).toBe('exact');
 
           // Verify network matches the configured network
-          expect(accept.network).toBe(network);
+          expect(accept.network).toBe(target.network);
 
           // Verify maxAmountRequired is price converted to atomic units
           const expectedAtomicUnits = priceToAtomicUnits(price);
@@ -475,7 +504,7 @@ describe('Property 5: 402 response contains correct payment requirements', () =>
           expect(accept.resource).toBe(expectedResource);
 
           // Verify payTo matches the configured PayTo address
-          expect(accept.payTo).toBe(payTo);
+          expect(accept.payTo).toBe(target.payTo);
 
           // Verify maxTimeoutSeconds
           expect(accept.maxTimeoutSeconds).toBe(30);
@@ -501,22 +530,20 @@ describe('Property 5: 402 response contains correct payment requirements', () =>
     await fc.assert(
       fc.asyncProperty(
         arbPositivePrice,
-        arbEthereumAddress,
-        arbNetwork,
+        arbPaymentTarget,
         arbPath,
         arbHost,
         async (
           price: string,
-          payTo: string,
-          network: string,
+          target: { payTo: string; network: string; facilitatorUrl: string },
           path: string,
           host: string,
         ) => {
           // Arrange
           const generatedConfig = {
-            payTo,
-            network,
-            facilitatorUrl: 'https://x402.org/facilitator',
+            payTo: target.payTo,
+            network: target.network,
+            facilitatorUrl: target.facilitatorUrl,
           };
           mockGetEdgeConfig.mockResolvedValue(generatedConfig);
           configureMockFor402();
@@ -551,22 +578,20 @@ describe('Property 5: 402 response contains correct payment requirements', () =>
     await fc.assert(
       fc.asyncProperty(
         arbPositivePrice,
-        arbEthereumAddress,
-        arbNetwork,
+        arbPaymentTarget,
         arbPath,
         arbHost,
         async (
           price: string,
-          payTo: string,
-          network: string,
+          target: { payTo: string; network: string; facilitatorUrl: string },
           path: string,
           host: string,
         ) => {
           // Arrange
           const generatedConfig = {
-            payTo,
-            network,
-            facilitatorUrl: 'https://x402.org/facilitator',
+            payTo: target.payTo,
+            network: target.network,
+            facilitatorUrl: target.facilitatorUrl,
           };
           mockGetEdgeConfig.mockResolvedValue(generatedConfig);
           configureMockFor402();

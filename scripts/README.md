@@ -1,18 +1,20 @@
 # x402 Traffic Generator
 
-Sends real HTTP traffic to a deployed CloudFront distribution with actual on-chain x402 payments via CDP Server Wallet.
+Sends real HTTP traffic to a deployed CloudFront distribution with actual on-chain x402 payments on Base or Solana.
 
 ## Setup
 
-1. Copy the env file and fill in your CDP credentials:
+1. Copy the env file and provide credentials for the network you want to pay on:
 
 ```bash
 cp scripts/.env.example scripts/.env
 ```
 
-2. Get credentials at https://cdp.coinbase.com
+2. For Base networks, set `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, and `CDP_WALLET_SECRET` from https://cdp.coinbase.com
 
-3. Fund the wallet with USDC on Base Sepolia. The wallet address is printed on first run. Use the [Base Sepolia faucet](https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet) for testnet ETH/USDC.
+3. For Solana networks, set `SVM_PRIVATE_KEY` to a base58-encoded 64-byte secret key.
+
+4. Fund the wallet with USDC on the target network. For testnet Base, use the [Base Sepolia faucet](https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet). For Solana Devnet, fund a Devnet wallet and mint or bridge Devnet USDC before running paid requests.
 
 ## Usage
 

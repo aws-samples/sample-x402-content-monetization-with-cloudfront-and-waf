@@ -4,7 +4,7 @@
  * Tests verify that createX402Server correctly wires together:
  * - HTTPFacilitatorClient with facilitatorConfig or { url: facilitatorUrl }
  * - x402ResourceServer with the facilitator client
- * - ExactEvmScheme registered for the provided network
+ * - ExactEvmScheme or ExactSvmScheme registered for the provided network
  * - x402HTTPResourceServer constructed with resource server and routes
  * - initialize() called on the HTTP server before returning
  *
@@ -27,6 +27,7 @@ const mockX402HTTPResourceServer = jest.fn().mockImplementation(() => ({
   initialize: mockInitialize,
 }));
 const mockExactEvmScheme = jest.fn();
+const mockExactSvmScheme = jest.fn();
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -42,6 +43,10 @@ jest.mock('@x402/evm/exact/server', () => ({
   ExactEvmScheme: mockExactEvmScheme,
 }));
 
+jest.mock('@x402/svm/exact/server', () => ({
+  ExactSvmScheme: mockExactSvmScheme,
+}));
+
 // Import after mocks are set up
 import { createX402Server } from '../../src/runtime/shared/x402-server';
 import type { X402ServerConfig } from '../../src/runtime/shared/x402-server';
@@ -51,6 +56,8 @@ import type { X402ServerConfig } from '../../src/runtime/shared/x402-server';
 // ---------------------------------------------------------------------------
 
 const TEST_NETWORK: Network = 'eip155:84532' as Network;
+const TEST_SOLANA_NETWORK: Network =
+  'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1' as Network;
 const TEST_FACILITATOR_URL = 'https://x402.org/facilitator';
 const TEST_ROUTES: RoutesConfig = {
   'GET /*': {
@@ -67,6 +74,21 @@ const TEST_CONFIG: X402ServerConfig = {
   facilitatorUrl: TEST_FACILITATOR_URL,
   network: TEST_NETWORK as string,
   routes: TEST_ROUTES,
+};
+
+const TEST_SOLANA_CONFIG: X402ServerConfig = {
+  facilitatorUrl: TEST_FACILITATOR_URL,
+  network: TEST_SOLANA_NETWORK as string,
+  routes: {
+    'GET /*': {
+      accepts: {
+        scheme: 'exact',
+        payTo: '7xKXtg2CW8yoW8XJshA8RM4n2nJwW9U4fGBuEXAMPLE',
+        price: 0.001,
+        network: TEST_SOLANA_NETWORK,
+      },
+    },
+  } as unknown as RoutesConfig,
 };
 
 // ---------------------------------------------------------------------------
@@ -112,6 +134,29 @@ describe('createX402Server', () => {
     const resourceServerInstance = mockX402ResourceServer.mock.results[0].value;
     expect(resourceServerInstance.register).toHaveBeenCalledTimes(1);
     expect(resourceServerInstance.register).toHaveBeenCalledWith(TEST_NETWORK, schemeInstance);
+  });
+
+  it('should register ExactSvmScheme for a Solana network', async () => {
+    const schemeInstance = { type: 'exact-svm-scheme' };
+    mockExactSvmScheme.mockReturnValueOnce(schemeInstance);
+
+    await createX402Server(TEST_SOLANA_CONFIG);
+
+    const resourceServerInstance = mockX402ResourceServer.mock.results[0].value;
+    expect(resourceServerInstance.register).toHaveBeenCalledTimes(1);
+    expect(resourceServerInstance.register).toHaveBeenCalledWith(
+      TEST_SOLANA_NETWORK,
+      schemeInstance,
+    );
+  });
+
+  it('should throw for an unsupported network family', async () => {
+    await expect(
+      createX402Server({
+        ...TEST_CONFIG,
+        network: 'cosmos:osmosis-1',
+      }),
+    ).rejects.toThrow(/Unsupported x402 network/);
   });
 
   it('should construct x402HTTPResourceServer with resource server and routes', async () => {

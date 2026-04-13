@@ -18,8 +18,8 @@
 
 import * as fc from 'fast-check';
 import type { RoutesConfig } from '@x402/core/server';
-import type { Network } from '@x402/core/types';
 import type { CloudFrontRequestEvent, CloudFrontRequest } from 'aws-lambda';
+import { buildExactRoutesConfig } from '../../src/runtime/shared/payment-config';
 
 // ---------------------------------------------------------------------------
 // Mocks (for Property 10 — handler-level testing)
@@ -43,31 +43,14 @@ import { createX402Middleware } from '../../src/runtime/shared/x402-middleware';
 const mockCreateX402Middleware = createX402Middleware as jest.MockedFunction<typeof createX402Middleware>;
 
 // ---------------------------------------------------------------------------
-// RoutesConfig construction logic (mirrors handler inline construction)
+// RoutesConfig construction logic
 // ---------------------------------------------------------------------------
 
-/**
- * Constructs a RoutesConfig from a WAF price header value and edge config,
- * exactly as the origin-request handler does.
- *
- * @see src/origin-request/handler.ts — lines constructing `routes`
- */
-function buildRoutesConfig(
-  routeActionHeader: string,
+const buildRoutesConfig = buildExactRoutesConfig as (
+  price: string,
   payTo: string,
   network: string,
-): RoutesConfig {
-  return {
-    'GET /*': {
-      accepts: {
-        scheme: 'exact',
-        payTo,
-        price: parseFloat(routeActionHeader),
-        network: network as Network,
-      },
-    },
-  } as unknown as RoutesConfig;
-}
+) => RoutesConfig;
 
 // ---------------------------------------------------------------------------
 // Generators
@@ -79,15 +62,34 @@ const arbPriceString = fc
   .filter((n) => n > 0)
   .map((n) => String(n));
 
-/** Generate a hex payTo address (0x followed by 40 hex chars). */
-const arbPayTo: fc.Arbitrary<string> = fc
+/** Generate a valid Ethereum-compatible address. */
+const arbEvmPayTo: fc.Arbitrary<string> = fc
   .array(fc.constantFrom('0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'), { minLength: 40, maxLength: 40 })
   .map((chars) => '0x' + chars.join(''));
 
-/** Generate a network identifier like "eip155:8453" or "eip155:84532". */
-const arbNetwork = fc
-  .integer({ min: 1, max: 99999 })
-  .map((chainId) => `eip155:${chainId}`);
+/** Generate a valid Solana base58 address. */
+const arbSolanaPayTo: fc.Arbitrary<string> = fc
+  .array(fc.constantFrom(
+    '1','2','3','4','5','6','7','8','9',
+    'A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z',
+    'a','b','c','d','e','f','g','h','i','j','k','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
+  ), { minLength: 32, maxLength: 44 })
+  .map((chars) => chars.join(''));
+
+/** Generate a compatible payTo/network pair across supported Base and Solana networks. */
+const arbPaymentTarget = fc.oneof(
+  fc.record({
+    payTo: arbEvmPayTo,
+    network: fc.constantFrom('eip155:84532', 'eip155:8453'),
+  }),
+  fc.record({
+    payTo: arbSolanaPayTo,
+    network: fc.constantFrom(
+      'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
+      'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+    ),
+  }),
+);
 
 // ---------------------------------------------------------------------------
 // Property Tests
@@ -98,10 +100,9 @@ describe('Property 9: Dynamic RoutesConfig construction', () => {
     fc.assert(
       fc.property(
         arbPriceString,
-        arbPayTo,
-        arbNetwork,
-        (priceStr, payTo, network) => {
-          const routes = buildRoutesConfig(priceStr, payTo, network);
+        arbPaymentTarget,
+        (priceStr, target) => {
+          const routes = buildRoutesConfig(priceStr, target.payTo, target.network);
 
           // Should have exactly one route key
           const keys = Object.keys(routes);
@@ -122,13 +123,13 @@ describe('Property 9: Dynamic RoutesConfig construction', () => {
           expect(route.accepts.scheme).toBe('exact');
 
           // Verify payTo matches input
-          expect(route.accepts.payTo).toBe(payTo);
+          expect(route.accepts.payTo).toBe(target.payTo);
 
           // Verify price is the numeric parse of the price string
           expect(route.accepts.price).toBe(parseFloat(priceStr));
 
           // Verify network matches input
-          expect(route.accepts.network).toBe(network);
+          expect(route.accepts.network).toBe(target.network);
         },
       ),
       { numRuns: 150, verbose: true },
@@ -139,10 +140,9 @@ describe('Property 9: Dynamic RoutesConfig construction', () => {
     fc.assert(
       fc.property(
         arbPriceString,
-        arbPayTo,
-        arbNetwork,
-        (priceStr, payTo, network) => {
-          const routes = buildRoutesConfig(priceStr, payTo, network);
+        arbPaymentTarget,
+        (priceStr, target) => {
+          const routes = buildRoutesConfig(priceStr, target.payTo, target.network);
           const route = (routes as Record<string, unknown>)['GET /*'] as {
             accepts: { price: number };
           };
@@ -159,18 +159,20 @@ describe('Property 9: Dynamic RoutesConfig construction', () => {
     fc.assert(
       fc.property(
         arbPriceString,
-        arbPayTo,
-        arbNetwork,
-        (priceStr, payTo, network) => {
-          const routes = buildRoutesConfig(priceStr, payTo, network);
+        arbPaymentTarget,
+        (priceStr, target) => {
+          const routes = buildRoutesConfig(priceStr, target.payTo, target.network);
           const route = (routes as Record<string, unknown>)['GET /*'] as {
             accepts: { payTo: string };
           };
 
-          // payTo must start with 0x and be exactly 42 chars (0x + 40 hex)
-          expect(route.accepts.payTo).toBe(payTo);
-          expect(route.accepts.payTo.startsWith('0x')).toBe(true);
-          expect(route.accepts.payTo).toHaveLength(42);
+          expect(route.accepts.payTo).toBe(target.payTo);
+          if (target.network.startsWith('eip155:')) {
+            expect(route.accepts.payTo.startsWith('0x')).toBe(true);
+            expect(route.accepts.payTo).toHaveLength(42);
+          } else {
+            expect(route.accepts.payTo).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+          }
         },
       ),
       { numRuns: 150, verbose: true },
@@ -181,16 +183,18 @@ describe('Property 9: Dynamic RoutesConfig construction', () => {
     fc.assert(
       fc.property(
         arbPriceString,
-        arbPayTo,
-        arbNetwork,
-        (priceStr, payTo, network) => {
-          const routes = buildRoutesConfig(priceStr, payTo, network);
+        arbPaymentTarget,
+        (priceStr, target) => {
+          const routes = buildRoutesConfig(priceStr, target.payTo, target.network);
           const route = (routes as Record<string, unknown>)['GET /*'] as {
             accepts: { network: string };
           };
 
-          expect(route.accepts.network).toBe(network);
-          expect(route.accepts.network.startsWith('eip155:')).toBe(true);
+          expect(route.accepts.network).toBe(target.network);
+          expect(
+            route.accepts.network.startsWith('eip155:') ||
+              route.accepts.network.startsWith('solana:'),
+          ).toBe(true);
         },
       ),
       { numRuns: 150, verbose: true },

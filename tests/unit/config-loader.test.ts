@@ -352,6 +352,34 @@ describe('Config Loader', () => {
     });
   });
 
+  describe('runtime config validation', () => {
+    it('should reject x402.org when configured with a mainnet network', async () => {
+      const ssm = createMockSsmClient({
+        payTo: '0x1234567890abcdef1234567890abcdef12345678',
+        network: 'eip155:8453',
+        facilitatorUrl: 'https://x402.org/facilitator',
+      });
+      _setSsmClient(ssm.client);
+      _setTtl(300);
+
+      await expect(getEdgeConfig()).rejects.toThrow(
+        /supports only Base Sepolia and Solana Devnet/,
+      );
+    });
+
+    it('should reject a pay-to address that does not match the network family', async () => {
+      const ssm = createMockSsmClient({
+        payTo: '7xKXtg2CW8yoW8XJshA8RM4n2nJwW9U4fGBuEXAMPLE',
+        network: 'eip155:84532',
+        facilitatorUrl: 'https://x402.org/facilitator',
+      });
+      _setSsmClient(ssm.client);
+      _setTtl(300);
+
+      await expect(getEdgeConfig()).rejects.toThrow(/not valid for EVM network/);
+    });
+  });
+
   // -----------------------------------------------------------------------
   // Deployment region derivation from function name
   // -----------------------------------------------------------------------

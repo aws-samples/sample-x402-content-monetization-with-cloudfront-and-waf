@@ -22,18 +22,20 @@ export interface CdpCredentials {
 
 /**
  * Configuration fetched from SSM Parameter Store by Lambda@Edge at runtime.
- * Contains the publisher's wallet address, blockchain network, and facilitator
- * URL. Cached in memory with a configurable TTL.
+ * Contains the publisher's receiving wallet address, blockchain network, and
+ * facilitator URL. Cached in memory with a configurable TTL.
  *
  */
 export interface EdgeConfig {
-  /** Publisher's Ethereum wallet address that receives USDC payments. */
+  /** Publisher wallet address that receives USDC payments on the configured network family. */
   payTo: string;
 
   /**
    * Blockchain network for payment settlement.
    * - `"eip155:84532"` — Base Sepolia testnet
    * - `"eip155:8453"` — Base Mainnet
+   * - `"solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"` — Solana Devnet
+   * - `"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"` — Solana Mainnet
    */
   network: string;
 
@@ -58,7 +60,7 @@ export interface PaymentRequirements {
   /** Price in USD as a string (e.g., `"0.001"`, `"0.01"`). */
   price: string;
 
-  /** Publisher's Ethereum wallet address that receives payment. */
+  /** Publisher wallet address that receives payment on the configured network. */
   payTo: string;
 
   /** Blockchain network identifier (e.g., `"eip155:84532"`). */
