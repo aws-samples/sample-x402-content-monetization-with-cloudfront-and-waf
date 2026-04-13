@@ -26,31 +26,46 @@ import type { EdgeConfig } from '../../src/runtime/shared/types';
 // Generators
 // ---------------------------------------------------------------------------
 
-/** Generate a valid Ethereum-like address. */
-const arbPayTo: fc.Arbitrary<string> = fc
+/** Generate a valid Ethereum-compatible address. */
+const arbEvmPayTo: fc.Arbitrary<string> = fc
   .array(fc.constantFrom('0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'), { minLength: 40, maxLength: 40 })
   .map((chars) => '0x' + chars.join(''));
 
-/** Generate a valid network string. */
-const arbNetwork: fc.Arbitrary<string> = fc.constantFrom(
-  'eip155:84532',
-  'eip155:8453',
-);
-
-/** Generate a valid facilitator URL. */
-const arbFacilitatorUrl: fc.Arbitrary<string> = fc.constantFrom(
-  'https://x402.org/facilitator',
-  'https://cdp.facilitator.example.com',
-);
+/** Generate a valid Solana base58 address. */
+const arbSolanaPayTo: fc.Arbitrary<string> = fc
+  .array(fc.constantFrom(
+    '1','2','3','4','5','6','7','8','9',
+    'A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z',
+    'a','b','c','d','e','f','g','h','i','j','k','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
+  ), { minLength: 32, maxLength: 44 })
+  .map((chars) => chars.join(''));
 
 /** Generate a valid EdgeConfig. */
-const arbEdgeConfig: fc.Arbitrary<EdgeConfig> = fc
-  .tuple(arbPayTo, arbNetwork, arbFacilitatorUrl)
-  .map(([payTo, network, facilitatorUrl]) => ({
-    payTo,
-    network,
-    facilitatorUrl,
-  }));
+const arbEdgeConfig: fc.Arbitrary<EdgeConfig> = fc.oneof(
+  fc.record({
+    payTo: arbEvmPayTo,
+    network: fc.constantFrom('eip155:84532', 'eip155:8453'),
+    facilitatorUrl: fc.constant('https://cdp.facilitator.example.com'),
+  }),
+  fc.record({
+    payTo: arbEvmPayTo,
+    network: fc.constant('eip155:84532'),
+    facilitatorUrl: fc.constant('https://x402.org/facilitator'),
+  }),
+  fc.record({
+    payTo: arbSolanaPayTo,
+    network: fc.constantFrom(
+      'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
+      'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+    ),
+    facilitatorUrl: fc.constant('https://cdp.facilitator.example.com'),
+  }),
+  fc.record({
+    payTo: arbSolanaPayTo,
+    network: fc.constant('solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'),
+    facilitatorUrl: fc.constant('https://x402.org/facilitator'),
+  }),
+);
 
 /** Generate a TTL value in seconds (small values for testability). */
 const arbTtlSeconds: fc.Arbitrary<number> = fc.integer({ min: 1, max: 60 });

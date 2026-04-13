@@ -3,7 +3,7 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   x402 on AWS Edge - One-click deployable solution for content monetization using the x402 payment protocol.
   Uses Amazon CloudFront, AWS Lambda@Edge, and AWS WAF to enable AI agents and bots to pay for content
-  access using USDC stablecoins on the Base blockchain. Configuration stored in AWS Systems Manager (SSM)
+  access using USDC stablecoins on Base or Solana networks. Configuration stored in AWS Systems Manager (SSM)
   Parameter Store; credentials in AWS Secrets Manager; logs in Amazon CloudWatch; content in Amazon S3.
 
 Globals:
@@ -29,9 +29,9 @@ Metadata:
 Parameters:
   PayToAddress:
     Type: String
-    Description: Publisher's Ethereum wallet address that receives USDC payments
-    AllowedPattern: '^0x[0-9a-fA-F]{40}$'
-    ConstraintDescription: Must be a valid Ethereum address (0x followed by 40 hex characters)
+    Description: Publisher wallet address that receives USDC payments on the selected network
+    AllowedPattern: '^(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})$'
+    ConstraintDescription: Must be a valid Ethereum-compatible or Solana address
 
   Network:
     Type: String
@@ -40,7 +40,9 @@ Parameters:
     AllowedValues:
       - 'eip155:84532'
       - 'eip155:8453'
-    ConstraintDescription: Must be either eip155:84532 (Base Sepolia testnet) or eip155:8453 (Base Mainnet)
+      - 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
+      - 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
+    ConstraintDescription: Must be a supported Base or Solana CAIP-2 network identifier
 
   RouteConfigJson:
     Type: String
@@ -81,6 +83,24 @@ Parameters:
       Stored in AWS Secrets Manager (encrypted with CMK). Value is masked
       in CloudFormation console and events.
     Default: ''
+
+Rules:
+  X402OrgRequiresTestnetNetwork:
+    RuleCondition: !Equals [!Ref FacilitatorType, 'x402.org']
+    Assertions:
+      - Assert:
+          Fn::Contains:
+            - - 'eip155:84532'
+              - 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
+            - !Ref Network
+        AssertDescription: FacilitatorType "x402.org" supports only Base Sepolia and Solana Devnet. Use "cdp" for mainnet.
+  CdpCredentialsRequiredWhenUsingCdp:
+    RuleCondition: !Equals [!Ref FacilitatorType, 'cdp']
+    Assertions:
+      - Assert: !Not [!Equals [!Ref CdpApiKeyName, '']]
+        AssertDescription: CdpApiKeyName must be provided when FacilitatorType is "cdp".
+      - Assert: !Not [!Equals [!Ref CdpApiKeyPrivateKey, '']]
+        AssertDescription: CdpApiKeyPrivateKey must be provided when FacilitatorType is "cdp".
 
 
 Conditions:
@@ -284,14 +304,14 @@ Resources:
         x402 route/pricing configuration JSON. Defines URL path patterns with condition-based
         access policies. Updated by publishers via SSM console or API.
 
-  # PayTo address - publisher's Ethereum wallet
+  # PayTo address - publisher wallet for the selected network
   SsmPayToAddress:
     Type: AWS::SSM::Parameter
     Properties:
       Name: !Sub '/x402-edge/${AWS::StackName}/config/payto'
       Type: String
       Value: !Ref PayToAddress
-      Description: Publisher's Ethereum wallet address that receives USDC payments
+      Description: Publisher wallet address that receives USDC payments on the selected network
 
   # Network - blockchain network for settlement
   SsmNetwork:
@@ -300,7 +320,7 @@ Resources:
       Name: !Sub '/x402-edge/${AWS::StackName}/config/network'
       Type: String
       Value: !Ref Network
-      Description: Blockchain network for payment settlement (Base Sepolia testnet or Base Mainnet)
+      Description: Blockchain network for payment settlement (Base or Solana)
 
   # Facilitator URL - conditional based on network selection
   SsmFacilitatorUrl:

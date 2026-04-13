@@ -16,14 +16,13 @@ import type {
   CloudFrontResponseResult,
   CloudFrontHeaders,
 } from 'aws-lambda';
-import type { RoutesConfig } from '@x402/core/server';
-import type { Network } from '@x402/core/types';
 import { removeResponseHeader } from '../shared/cloudfront-adapter';
 import { getEdgeConfig } from '../shared/config-loader';
 import { createCdpFacilitatorConfig } from '../shared/cdp-auth';
 import { emitSettlement } from '../shared/logger';
 import type { LogContext } from '../shared/logger';
 import { createX402Middleware } from '../shared/x402-middleware';
+import { buildExactRoutesConfig } from '../shared/payment-config';
 import {
   Headers,
   RouteDefaults,
@@ -153,16 +152,11 @@ export const handler = async (
   try {
     const edgeConfig = await getEdgeConfig();
 
-    const routes: RoutesConfig = {
-      [RouteDefaults.CATCH_ALL_PATTERN]: {
-        accepts: {
-          scheme: 'exact',
-          payTo: edgeConfig.payTo,
-          price: parseFloat(logCtx.price),
-          network: edgeConfig.network as Network,
-        },
-      },
-    };
+    const routes = buildExactRoutesConfig(
+      logCtx.price,
+      edgeConfig.payTo,
+      edgeConfig.network,
+    );
 
     const middleware = createX402Middleware({
       facilitatorUrl: edgeConfig.facilitatorUrl,

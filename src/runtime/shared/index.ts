@@ -35,6 +35,15 @@ export { createX402Server } from './x402-server';
 export type { X402ServerConfig } from './x402-server';
 export { createX402Middleware } from './x402-middleware';
 export type { OriginRequestResult, OriginResponseResult } from './x402-middleware';
+export {
+  assertValidEdgeConfig,
+  buildExactRoutesConfig,
+  isEvmAddress,
+  isEvmNetwork,
+  isSolanaAddress,
+  isSolanaNetwork,
+  isTestnetNetwork,
+} from './payment-config';
 
 // Re-export response utilities
 export { toLambdaResponse } from './to-lambda-response';

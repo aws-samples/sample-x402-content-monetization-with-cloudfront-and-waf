@@ -54,7 +54,7 @@ const TEST_SSM_PREFIX = '/x402-edge/test-stack/config';
 
 /** Realistic mock configuration for testnet deployment. */
 const TESTNET_CONFIG = {
-  payTo: '0xTestPayToAddress1234567890abcdef12345678',
+  payTo: '0x1234567890abcdef1234567890abcdef12345678',
   network: 'eip155:84532',
   facilitatorUrl: 'https://x402.org/facilitator',
 };

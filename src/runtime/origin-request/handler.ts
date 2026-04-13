@@ -18,14 +18,13 @@ import type {
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
 } from 'aws-lambda';
-import type { RoutesConfig } from '@x402/core/server';
-import type { Network } from '@x402/core/types';
 import { extractRequest, removeHeader } from '../shared/cloudfront-adapter';
 import { getEdgeConfig } from '../shared/config-loader';
 import { createCdpFacilitatorConfig } from '../shared/cdp-auth';
 import { emitVerification, emitPaymentRequested, emitPassthrough } from '../shared/logger';
 import type { LogContext } from '../shared/logger';
 import { createX402Middleware } from '../shared/x402-middleware';
+import { buildExactRoutesConfig } from '../shared/payment-config';
 import { toLambdaResponse } from '../shared/to-lambda-response';
 import { Headers, RouteDefaults } from '../shared/constants';
 
@@ -77,16 +76,11 @@ export const handler = async (
   const edgeConfig = await getEdgeConfig();
 
   // Construct dynamic RoutesConfig from WAF price + SSM config
-  const routes: RoutesConfig = {
-    [RouteDefaults.CATCH_ALL_PATTERN]: {
-      accepts: {
-        scheme: 'exact',
-        payTo: edgeConfig.payTo,
-        price: parseFloat(routeActionHeader),
-        network: edgeConfig.network as Network,
-      },
-    },
-  };
+  const routes = buildExactRoutesConfig(
+    routeActionHeader,
+    edgeConfig.payTo,
+    edgeConfig.network,
+  );
 
   // Create middleware following upstream pattern — config at construction,
   // server instance cached per Lambda container via serverPromise.

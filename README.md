@@ -1,6 +1,6 @@
 # sample-x402-content-monetization-with-cloudfront-and-waf
 
-Monetize your content with one-click deployment. This solution uses the [x402 payment protocol](https://x402.org) to charge AI agents and bots for accessing your content — payments in USDC stablecoins on the Base blockchain, enforced at the AWS edge.
+Monetize your content with one-click deployment. This solution uses the [x402 payment protocol](https://x402.org) to charge AI agents and bots for accessing your content — payments in USDC stablecoins on Base or Solana, enforced at the AWS edge.
 
 Deploy a single SAM stack and get: Amazon CloudFront distribution with sample content, AWS WAF with Bot Control v5 (650+ bots), AWS Lambda@Edge payment verification and settlement, a visual route config editor, and a revenue dashboard. Configuration lives in AWS Systems Manager (SSM) Parameter Store, credentials in AWS Secrets Manager, logs in Amazon CloudWatch, and content in Amazon S3. No servers to manage, no code to write.
 
@@ -152,7 +152,7 @@ The facilitator handles payment verification and on-chain settlement. The `x402.
 - AWS account with permissions to create CloudFront, WAF, Lambda, SSM, Secrets Manager, and S3 resources
 - [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
 - Node.js 24+
-- An Ethereum wallet address (for receiving USDC payments)
+- A wallet address for the network you plan to use (Ethereum-compatible for Base, or Solana for SVM)
 
 ### Deploy
 
@@ -165,13 +165,15 @@ SAM will prompt for these parameters:
 
 | Parameter | Description | Default |
 |---|---|---|
-| `PayToAddress` | Your Ethereum wallet address (receives USDC) | (required) |
-| `Network` | `eip155:84532` (Base Sepolia testnet) or `eip155:8453` (Base mainnet) | `eip155:84532` |
+| `PayToAddress` | Your receiving wallet address for the selected network | (required) |
+| `Network` | `eip155:84532` (Base Sepolia), `eip155:8453` (Base), `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Solana Devnet), or `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` (Solana Mainnet) | `eip155:84532` |
 | `FacilitatorType` | `x402.org` (free, no auth, testnet only) or `cdp` (requires CDP API key, testnet + mainnet) | `x402.org` |
 | `RouteConfigJson` | Pricing configuration JSON (see above) | Default config |
 | `OriginDomainName` | Custom origin domain (empty = sample S3 origin) | `""` |
 | `CdpApiKeyName` | CDP API key name (only when FacilitatorType is `cdp`) | `""` |
 | `CdpApiKeyPrivateKey` | CDP API key private key (only when FacilitatorType is `cdp`) | `""` |
+
+`PayToAddress` must match the selected `Network`: use a `0x...` address for Base and a base58 Solana address for Solana networks. If you choose `x402.org`, only Base Sepolia and Solana Devnet are valid.
 
 Stack outputs include:
 - **CloudFront URL** — your payment-gated content

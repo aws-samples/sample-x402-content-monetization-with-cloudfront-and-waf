@@ -25,6 +25,7 @@ import {
 } from '@aws-sdk/client-secrets-manager';
 import type { EdgeConfig, ConfigCache, CdpCredentials } from './types';
 import { SsmConfig, CdpConfig, EnvVars } from './constants';
+import { assertValidEdgeConfig } from './payment-config';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -203,6 +204,7 @@ async function fetchEdgeConfig(): Promise<EdgeConfig> {
   }
 
   const edgeConfig: EdgeConfig = { payTo, network, facilitatorUrl };
+  assertValidEdgeConfig(edgeConfig);
 
   // If CDP facilitator, fetch credentials from Secrets Manager
   if (isCdpFacilitator(facilitatorUrl)) {

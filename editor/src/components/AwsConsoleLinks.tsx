@@ -44,12 +44,12 @@ function buildLinks(stack: string, region: string, wafWebAclId?: string, cfDistr
     {
       label: '💰 PayTo address',
       href: ssmParamUrl(region, `${prefix}/payto`),
-      description: 'Ethereum wallet that receives USDC payments',
+      description: 'Receiving wallet for Base or Solana USDC payments',
     },
     {
       label: '🔗 Network',
       href: ssmParamUrl(region, `${prefix}/network`),
-      description: 'Blockchain network (Base Sepolia or Mainnet)',
+      description: 'Blockchain network (Base or Solana, testnet or mainnet)',
     },
     {
       label: '🌐 Facilitator URL',

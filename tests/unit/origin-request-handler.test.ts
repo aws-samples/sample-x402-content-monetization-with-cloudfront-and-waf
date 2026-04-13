@@ -108,6 +108,12 @@ const mockEdgeConfig = {
   facilitatorUrl: 'https://x402.org/facilitator',
 };
 
+const mockSolanaEdgeConfig = {
+  payTo: '7xKXtg2CW8yoW8XJshA8RM4n2nJwW9U4fGBuEXAMPLE',
+  network: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
+  facilitatorUrl: 'https://x402.org/facilitator',
+};
+
 let mockProcessOriginRequest: jest.Mock;
 
 function setupMiddleware(result: Record<string, unknown>): void {
@@ -187,6 +193,42 @@ describe('Origin Request Handler - Core Logic', () => {
       });
       await handler(event);
       expect(mockProcessOriginRequest).toHaveBeenCalled();
+    });
+
+    it('should build Solana payment requirements when the edge config uses a Solana network', async () => {
+      mockGetEdgeConfig.mockResolvedValueOnce(mockSolanaEdgeConfig);
+      setupMiddleware({
+        type: 'payment-error',
+        response: { status: 402, headers: {}, body: {} },
+      });
+      mockToLambdaResponse.mockReturnValue({
+        status: '402',
+        statusDescription: 'Payment Required',
+        headers: {},
+        body: '{}',
+      });
+
+      const event = createMockEvent('/api/data', {
+        headers: { 'x-amzn-waf-x-x402-route-action': '0.0025' },
+      });
+      await handler(event);
+
+      expect(mockCreateX402Middleware).toHaveBeenCalledWith(
+        expect.objectContaining({
+          facilitatorUrl: mockSolanaEdgeConfig.facilitatorUrl,
+          network: mockSolanaEdgeConfig.network,
+          routes: {
+            'GET /*': {
+              accepts: {
+                scheme: 'exact',
+                payTo: mockSolanaEdgeConfig.payTo,
+                price: 0.0025,
+                network: mockSolanaEdgeConfig.network,
+              },
+            },
+          },
+        }),
+      );
     });
   });
 
