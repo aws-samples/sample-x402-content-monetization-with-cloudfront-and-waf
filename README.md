@@ -1,5 +1,7 @@
 # sample-x402-content-monetization-with-cloudfront-and-waf
 
+> **📢 Note:** Amazon CloudFront and AWS WAF now officially support AI traffic monetization (x402 today, with MPP for machine-to-machine payments coming soon) — see [AWS WAF adds AI traffic monetization capability](https://aws.amazon.com/blogs/aws/aws-waf-adds-ai-traffic-monetization-capability-to-help-content-owners-charge-ai-bots-for-content-access/). For most use cases, the native capability reduces the need for a custom solution like this one. **This project remains available as a reference** — a research and experimentation space for exploring the mechanics of how custom payment negotiation can work at the edge.
+
 Monetize your content with one-click deployment. This solution uses the [x402 payment protocol](https://x402.org) to charge AI agents and bots for accessing your content — payments in USDC stablecoins on the Base blockchain, enforced at the AWS edge.
 
 Deploy a single SAM stack and get: Amazon CloudFront distribution with sample content, AWS WAF with Bot Control v5 (650+ bots), AWS Lambda@Edge payment verification and settlement, a visual route config editor, and a revenue dashboard. Configuration lives in AWS Systems Manager (SSM) Parameter Store, credentials in AWS Secrets Manager, logs in Amazon CloudWatch, and content in Amazon S3. No servers to manage, no code to write.
