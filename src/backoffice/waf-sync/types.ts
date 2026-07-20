@@ -13,7 +13,7 @@
  * Top-level route configuration stored as JSON in SSM Parameter Store.
  * Defines URL path patterns mapped to ordered lists of condition-based
  * access policies. The WAF_Sync_Function reads this to generate WAF rules,
- * and Lambda@Edge relies on the WAF-injected price header at runtime.
+ * and AWS WAF enforces the resulting native monetization actions at the edge.
  *
  */
 export interface RouteConfig {
@@ -114,17 +114,15 @@ export interface WafRule {
   /**
    * WAF rule action:
    * - `"block"` — Block the request at WAF (denied requests never reach Lambda@Edge)
-   * - Object with `insertHeader` — Count the request, inject a custom header with
-   *   the resolved price, and add a label so subsequent rules are scope-down skipped.
-   *   Uses Count action so WAF continues evaluation but the label prevents later
-   *   route rules from also matching (first-match-wins via label scope-down).
+   * - `"allow"` — allow free access.
+   * - Object with `monetize.priceMultiplier` — use the native AWS WAF Monetize
+   *   action. The multiplier is applied to the rule group's USDC base price.
    */
-  action: 'block' | { insertHeader: { name: string; value: string } };
+  action: 'block' | 'allow' | { monetize: { priceMultiplier: string } };
 
   /**
    * Custom labels to add to the request when this rule matches.
-   * Used for scope-down exclusion: once a pricing rule matches and labels
-   * the request, subsequent pricing rules skip it via NOT LabelMatch.
+   * Optional labels to add to matching requests.
    */
   ruleLabels?: string[];
 }
@@ -212,11 +210,6 @@ export interface WafStatement {
    */
   orStatement?: { statements: WafStatement[] };
 
-  /**
-   * Logical NOT wrapper for scope-down exclusion or condition negation.
-   * Used to skip rules when a request has already been captured by an
-   * earlier Count rule (i.e., already has the `x402:route-matched` label),
-   * or to negate a condition expression via `{ not: <condition> }`.
-   */
+  /** Logical NOT wrapper for `{ not: <condition> }` expressions. */
   notStatement?: { statement: WafStatement };
 }

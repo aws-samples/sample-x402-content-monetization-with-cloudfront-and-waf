@@ -46,6 +46,16 @@ const TEST_SSM_HASH_PATH = `/x402-edge/${TEST_STACK_NAME}/sync/last-hash`;
 const TEST_WAF_RULE_GROUP_NAME = 'x402-test-rule-group';
 const TEST_WAF_RULE_GROUP_ID = 'rg-test-id-12345';
 const TEST_LOCK_TOKEN = 'lock-token-abc123';
+const TEST_MONETIZATION_CONFIG = {
+  CurrencyMode: 'TEST' as const,
+  CryptoConfig: {
+    PaymentNetworks: [{
+      Chain: 'BASE_SEPOLIA' as const,
+      WalletAddress: '0x0000000000000000000000000000000000000001',
+      Prices: [{ Amount: '0.001', Currency: 'USDC' as const }],
+    }],
+  },
+};
 
 /**
  * A simple valid Route_Config for testing.
@@ -191,6 +201,7 @@ function setupWafv2Mock(): void {
         CloudWatchMetricsEnabled: true,
         MetricName: TEST_WAF_RULE_GROUP_NAME,
       },
+      MonetizationConfig: TEST_MONETIZATION_CONFIG,
     },
   });
 
@@ -301,9 +312,10 @@ describe('WAF Sync Handler - Integration Tests', () => {
         LockToken: TEST_LOCK_TOKEN,
       });
 
-      // Assert: Rules were generated (1 guard + 2 route rules from 2 policies + 6 bot signal rules)
+      // One native terminating rule is generated for each policy.
       const rules = updateCall.args[0].input.Rules as unknown[];
-      expect(rules).toHaveLength(9);
+      expect(rules).toHaveLength(2);
+      expect(updateCall.args[0].input.MonetizationConfig).toEqual(TEST_MONETIZATION_CONFIG);
 
       // Assert: Hash was stored
       expect(ssmMock.commandCalls(PutParameterCommand)).toHaveLength(1);
@@ -339,55 +351,27 @@ describe('WAF Sync Handler - Integration Tests', () => {
       // Act
       await handler(createSsmChangeEvent());
 
-      // Assert: 1 guard + 5 route rules + 6 bot signal rules (3 actor-type + 1 category + 1 org + 1 name)
+      // Five policies produce five native terminating rules.
       const updateCall = wafv2Mock.commandCalls(UpdateRuleGroupCommand)[0];
       const rules = updateCall.args[0].input.Rules as unknown as Record<string, unknown>[];
-      expect(rules).toHaveLength(12);
+      expect(rules).toHaveLength(5);
 
-      // First rule is the guard rule
       expect(rules[0]).toMatchObject({
-        Name: 'guard-block-spoofed-headers',
-        Priority: 0,
-        Action: { Block: {} },
-      });
-
-      // Verify second rule (index 1) is a price rule (Count with InsertHeader + label)
-      expect(rules[1]).toMatchObject({
         Name: 'route-0-policy-0-price-0-001',
         Priority: 1,
-        Action: {
-          Count: {
-            CustomRequestHandling: {
-              InsertHeaders: [
-                { Name: 'x-x402-route-action', Value: '0.001' },
-              ],
-            },
-          },
-        },
-        RuleLabels: [{ Name: 'x402:route-matched' }],
+        Action: { Monetize: { PriceMultiplier: '1' } },
       });
 
-      // Verify third rule (index 2) is a block rule
-      expect(rules[2]).toMatchObject({
+      expect(rules[1]).toMatchObject({
         Name: 'route-0-policy-1-block',
         Priority: 2,
         Action: { Block: {} },
       });
 
-      // Verify free access rule (price "0") — Count with InsertHeader + label
-      expect(rules[4]).toMatchObject({
+      expect(rules[3]).toMatchObject({
         Name: 'route-1-policy-1-free',
         Priority: 4,
-        Action: {
-          Count: {
-            CustomRequestHandling: {
-              InsertHeaders: [
-                { Name: 'x-x402-route-action', Value: '0' },
-              ],
-            },
-          },
-        },
-        RuleLabels: [{ Name: 'x402:route-matched' }],
+        Action: { Allow: {} },
       });
     });
 
@@ -407,6 +391,7 @@ describe('WAF Sync Handler - Integration Tests', () => {
             CloudWatchMetricsEnabled: true,
             MetricName: TEST_WAF_RULE_GROUP_NAME,
           },
+          MonetizationConfig: TEST_MONETIZATION_CONFIG,
         },
       });
       wafv2Mock.on(UpdateRuleGroupCommand).resolves({
@@ -561,6 +546,7 @@ describe('WAF Sync Handler - Integration Tests', () => {
             CloudWatchMetricsEnabled: true,
             MetricName: TEST_WAF_RULE_GROUP_NAME,
           },
+          MonetizationConfig: TEST_MONETIZATION_CONFIG,
         },
       });
       wafv2Mock

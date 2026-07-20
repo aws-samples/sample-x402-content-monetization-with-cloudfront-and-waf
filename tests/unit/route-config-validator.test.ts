@@ -140,18 +140,18 @@ describe('validateRouteConfig – valid configs', () => {
     expect(config.routes[0].policies[0].action).toBe('0');
   });
 
-  it('accepts integer price strings', () => {
+  it('accepts the maximum native WAF price', () => {
     const config = expectSuccess(
       validateRouteConfig({
         routes: [
           {
             pattern: '/expensive/**',
-            policies: [{ condition: 'default', action: '10' }],
+            policies: [{ condition: 'default', action: '0.1' }],
           },
         ],
       }),
     );
-    expect(config.routes[0].policies[0].action).toBe('10');
+    expect(config.routes[0].policies[0].action).toBe('0.1');
   });
 
   it('accepts the default route config template from the design', () => {
@@ -354,7 +354,7 @@ describe('validateRouteConfig – invalid access policies', () => {
       validateRouteConfig({
         routes: [{ pattern: '/api/*', policies: [{ condition: 'default', action: 'free' }] }],
       }),
-      'action: must be "block" or a non-negative price string',
+      'action: must be "block", "0", or a native WAF price',
     );
   });
 
@@ -363,7 +363,7 @@ describe('validateRouteConfig – invalid access policies', () => {
       validateRouteConfig({
         routes: [{ pattern: '/api/*', policies: [{ condition: 'default', action: '-1' }] }],
       }),
-      'action: must be "block" or a non-negative price string',
+      'action: must be "block", "0", or a native WAF price',
     );
   });
 });

@@ -3,6 +3,8 @@ node_modules/
 
 # Build output
 dist/
+build/
+out/
 
 # Test coverage
 coverage/
@@ -24,6 +26,15 @@ CLAUDE.md
 .env
 .env.*
 !.env.example
+!.env.*.example
+
+# Local credentials and certificates
+.aws/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
 
 # TypeScript incremental
 *.tsbuildinfo
@@ -31,8 +42,31 @@ CLAUDE.md
 # SAM
 .aws-sam/
 samconfig.toml
+samconfig.yaml
+packaged.yaml
+packaged.yml
+
+# CDK and infrastructure state
+cdk.out/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
 
 # Logs
 *.log
+*.log.*
 npm-debug.log*
+logs/
 
+# Local deployment/audit exports
+.local/
+artifacts/
+settlement-records*.json
+waf-logs*.json
+cloudformation-events*.json
+*.har
+*.pcap
+*.local.png
+*.local.jpg
+*.local.jpeg

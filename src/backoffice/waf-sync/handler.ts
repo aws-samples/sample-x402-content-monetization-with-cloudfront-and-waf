@@ -9,7 +9,8 @@
  * 2. Computes a hash of the Route_Config content
  * 3. Compares hash against the last-synced hash (stored in SSM)
  * 4. If unchanged → skips WAF update, logs "no changes detected"
- * 5. If changed → translates Route_Config to WAF rules and updates WAF_Rule_Group
+ * 5. If changed → translates Route_Config to native WAF Allow/Block/Monetize
+ *    rules and updates WAF_Rule_Group
  * 6. Stores the new hash for next comparison
  *
  * Triggered by:
@@ -36,19 +37,11 @@ import { computeHash, hasChanged } from './change-detector';
 import { translateRouteConfig } from './waf-rule-translator';
 import { validateWcuCapacity } from './wcu-calculator';
 import {
-  WafLabels,
-  ActorType,
-  BotSignalHeaders,
   WafScope,
-  WafTextTransformation,
-  WafComparisonOperator,
-  LabelMatchScope,
-  GuardRule,
   SsmParameterType,
   AwsErrors,
   WafEnvVars,
 } from './constants';
-import { Headers } from '../../runtime/shared/constants';
 
 // ---------------------------------------------------------------------------
 // AWS SDK Clients (module-level singletons for connection reuse)
@@ -194,7 +187,7 @@ function toAwsStatement(statement: WafStatement): Record<string, unknown> {
     };
   }
 
-  // NOT statement — scope-down exclusion for already-matched requests
+  // NOT condition expression
   if (statement.notStatement) {
     return {
       NotStatement: {
@@ -243,224 +236,11 @@ function toAwsStatement(statement: WafStatement): Record<string, unknown> {
 }
 
 /**
- * The custom header name injected by WAF for price-based routing.
- * Used by the guard rule to detect spoofed headers.
- */
-/**
- * Headers that are internal to the WAF → Lambda@Edge pipeline.
- * The guard rule blocks any request arriving with these pre-existing headers
- * to prevent clients from spoofing internal signals.
- */
-const GUARDED_HEADERS = [
-  Headers.ROUTE_ACTION,
-  Headers.WAF_ROUTE_ACTION,
-  BotSignalHeaders.ACTOR_TYPE,
-  Headers.WAF_ACTOR_TYPE,
-  BotSignalHeaders.BOT_CATEGORY,
-  Headers.WAF_BOT_CATEGORY,
-  BotSignalHeaders.BOT_ORGANIZATION,
-  Headers.WAF_BOT_ORGANIZATION,
-  BotSignalHeaders.BOT_NAME,
-  Headers.WAF_BOT_NAME,
-];
-
-/**
- * Build a guard rule that blocks any request arriving with pre-existing
- * internal headers. These headers are set only by WAF via Count action
- * InsertHeaders. If a client sends them, they're trying to spoof signals.
- *
- * Uses SizeConstraintStatement with GE 0: if the header value has size >= 0,
- * the header exists and the request is blocked. WAF treats a missing
- * header as not matching the size constraint, so only requests that
- * actually carry the header will be blocked.
- *
- * This rule gets priority 0 so it evaluates before all route rules.
- */
-function buildGuardRule(): Record<string, unknown> {
-  const makeSizeCheck = (headerName: string) => ({
-    SizeConstraintStatement: {
-      FieldToMatch: {
-        SingleHeader: { Name: headerName },
-      },
-      ComparisonOperator: WafComparisonOperator.GE,
-      Size: 0,
-      TextTransformations: [{ Priority: 0, Type: WafTextTransformation.NONE }],
-    },
-  });
-
-  return {
-    Name: GuardRule.NAME,
-    Priority: 0,
-    Statement: {
-      OrStatement: {
-        Statements: GUARDED_HEADERS.map(makeSizeCheck),
-      },
-    },
-    Action: { Block: {} },
-    VisibilityConfig: {
-      SampledRequestsEnabled: true,
-      CloudWatchMetricsEnabled: true,
-      MetricName: GuardRule.NAME,
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Bot Signal Forwarding Rules
-// ---------------------------------------------------------------------------
-
-/**
- * Build WAF rules that forward Bot Control labels to the origin as custom
- * headers. These rules use Count action with InsertHeaders so they don't
- * terminate evaluation and the headers reach Lambda@Edge.
- *
- * Uses WAF dynamic labels (`${namespace:}` interpolation) to forward all
- * values in each Bot Control namespace with a single rule per namespace,
- * instead of one rule per individual value. This eliminates curated lists
- * and automatically captures new bots/categories/organizations as AWS
- * adds them to Bot Control.
- *
- * Six rules are generated:
- *
- * 1. `actor-type` — trust level cascade (3 rules, last match wins):
- *    - NAMESPACE match on `bot:category:` → `"unverified-bot"`
- *    - LABEL match on `bot:verified` → `"verified-bot"`
- *    - LABEL match on `bot:web_bot_auth:verified` → `"wba-verified-bot"`
- *
- * 2. `bot-category` — dynamic label forwarding (1 rule):
- *    - NAMESPACE match on `bot:category:` → `"${bot:category:}"`
- *
- * 3. `bot-organization` — dynamic label forwarding (1 rule):
- *    - NAMESPACE match on `bot:organization:` → `"${bot:organization:}"`
- *
- * 4. `bot-name` — dynamic label forwarding (1 rule):
- *    - NAMESPACE match on `bot:name:` → `"${bot:name:}"`
- *
- * @param routeRules - The translated route rules (used to determine starting priority)
- * @returns Array of AWS WAFv2 rule objects for bot signal forwarding
- */
-function buildBotSignalForwardingRules(routeRules: WafRule[]): Record<string, unknown>[] {
-  // Start priorities after the last route rule
-  const maxRoutePriority = routeRules.reduce((max, r) => Math.max(max, r.priority), 0);
-  let priority = maxRoutePriority + 100;
-
-  const rules: Record<string, unknown>[] = [];
-
-  const makeCountWithHeader = (name: string, value: string) => ({
-    Count: {
-      CustomRequestHandling: {
-        InsertHeaders: [{ Name: name, Value: value }],
-      },
-    },
-  });
-
-  const makeVisibility = (metricName: string) => ({
-    SampledRequestsEnabled: true,
-    CloudWatchMetricsEnabled: true,
-    MetricName: metricName,
-  });
-
-  // --- actor-type cascade (lowest trust first, last match wins) ---
-
-  // Rule 1: Any bot category → "unverified-bot"
-  rules.push({
-    Name: 'bot-signal-actor-type-unverified',
-    Priority: priority++,
-    Statement: {
-      LabelMatchStatement: {
-        Scope: LabelMatchScope.NAMESPACE,
-        Key: WafLabels.CATEGORY,
-      },
-    },
-    Action: makeCountWithHeader(BotSignalHeaders.ACTOR_TYPE, ActorType.UNVERIFIED_BOT),
-    VisibilityConfig: makeVisibility('bot-signal-actor-type-unverified'),
-  });
-
-  // Rule 2: Verified bot → "verified-bot" (overwrites unverified)
-  rules.push({
-    Name: 'bot-signal-actor-type-verified',
-    Priority: priority++,
-    Statement: {
-      LabelMatchStatement: {
-        Scope: LabelMatchScope.LABEL,
-        Key: WafLabels.VERIFIED,
-      },
-    },
-    Action: makeCountWithHeader(BotSignalHeaders.ACTOR_TYPE, ActorType.VERIFIED_BOT),
-    VisibilityConfig: makeVisibility('bot-signal-actor-type-verified'),
-  });
-
-  // Rule 3: WBA verified → "wba-verified-bot" (strongest signal, overwrites all)
-  rules.push({
-    Name: 'bot-signal-actor-type-wba-verified',
-    Priority: priority++,
-    Statement: {
-      LabelMatchStatement: {
-        Scope: LabelMatchScope.LABEL,
-        Key: WafLabels.WBA_VERIFIED,
-      },
-    },
-    Action: makeCountWithHeader(BotSignalHeaders.ACTOR_TYPE, ActorType.WBA_VERIFIED_BOT),
-    VisibilityConfig: makeVisibility('bot-signal-actor-type-wba-verified'),
-  });
-
-  // --- dynamic label forwarding (one namespace rule per signal family) ---
-
-  // Bot category: resolves to the matched category value (e.g., "ai", "search_engine")
-  rules.push({
-    Name: 'bot-signal-forward-category',
-    Priority: priority++,
-    Statement: {
-      LabelMatchStatement: {
-        Scope: LabelMatchScope.NAMESPACE,
-        Key: WafLabels.CATEGORY,
-      },
-    },
-    Action: makeCountWithHeader(BotSignalHeaders.BOT_CATEGORY, `\${${WafLabels.CATEGORY}}`),
-    VisibilityConfig: makeVisibility('bot-signal-forward-category'),
-  });
-
-  // Bot organization: resolves to the matched organization value (e.g., "anthropic", "google")
-  rules.push({
-    Name: 'bot-signal-forward-organization',
-    Priority: priority++,
-    Statement: {
-      LabelMatchStatement: {
-        Scope: LabelMatchScope.NAMESPACE,
-        Key: WafLabels.ORGANIZATION,
-      },
-    },
-    Action: makeCountWithHeader(BotSignalHeaders.BOT_ORGANIZATION, `\${${WafLabels.ORGANIZATION}}`),
-    VisibilityConfig: makeVisibility('bot-signal-forward-organization'),
-  });
-
-  // Bot name: resolves to the matched bot name value (e.g., "claudebot", "perplexitybot")
-  rules.push({
-    Name: 'bot-signal-forward-name',
-    Priority: priority++,
-    Statement: {
-      LabelMatchStatement: {
-        Scope: LabelMatchScope.NAMESPACE,
-        Key: WafLabels.NAME,
-      },
-    },
-    Action: makeCountWithHeader(BotSignalHeaders.BOT_NAME, `\${${WafLabels.NAME}}`),
-    VisibilityConfig: makeVisibility('bot-signal-forward-name'),
-  });
-
-  return rules;
-}
-
-/**
  * Translate our internal WafRule[] to the AWS WAFv2 API Rules format.
- * Prepends a guard rule that blocks requests with a spoofed
- * x-x402-route-action header. Appends bot signal forwarding rules
- * that translate Bot Control labels into custom headers for Lambda@Edge.
+ * All route actions are terminating native WAF actions, so rule priority
+ * directly preserves first-match-wins behavior without injected headers.
  */
 function toAwsRules(rules: WafRule[]): Record<string, unknown>[] {
-  const guardRule = buildGuardRule();
-  const botSignalRules = buildBotSignalForwardingRules(rules);
-
   const routeRules = rules.map((rule) => {
     const awsRule: Record<string, unknown> = {
       Name: rule.name,
@@ -475,26 +255,17 @@ function toAwsRules(rules: WafRule[]): Record<string, unknown>[] {
 
     if (rule.action === 'block') {
       awsRule.Action = { Block: {} };
+    } else if (rule.action === 'allow') {
+      awsRule.Action = { Allow: {} };
     } else {
-      // Price/free action — Count with InsertHeader custom request handling.
-      // Count lets WAF continue evaluation, but the route-matched label
-      // combined with scope-down NOT on subsequent rules ensures only the
-      // first matching rule's header is effective (first-match-wins).
       awsRule.Action = {
-        Count: {
-          CustomRequestHandling: {
-            InsertHeaders: [
-              {
-                Name: rule.action.insertHeader.name,
-                Value: rule.action.insertHeader.value,
-              },
-            ],
-          },
+        Monetize: {
+          PriceMultiplier: rule.action.monetize.priceMultiplier,
         },
       };
     }
 
-    // Add rule labels for scope-down exclusion
+    // Preserve any explicitly supplied labels for non-route extensions.
     if (rule.ruleLabels && rule.ruleLabels.length > 0) {
       awsRule.RuleLabels = rule.ruleLabels.map((label) => ({ Name: label }));
     }
@@ -502,7 +273,7 @@ function toAwsRules(rules: WafRule[]): Record<string, unknown>[] {
     return awsRule;
   });
 
-  return [guardRule, ...routeRules, ...botSignalRules];
+  return routeRules;
 }
 
 /**
@@ -535,6 +306,10 @@ async function updateWafRuleGroup(rules: WafRule[]): Promise<void> {
 
   // Translate internal rules to AWS WAFv2 API format
   const awsRules = toAwsRules(rules);
+  const monetizationConfig = getRuleGroupResult.RuleGroup?.MonetizationConfig;
+  if (!monetizationConfig) {
+    throw new Error('WAF Rule Group is missing the required MonetizationConfig');
+  }
 
   // Update the rule group with the new rules
   await wafv2Client.send(
@@ -544,6 +319,7 @@ async function updateWafRuleGroup(rules: WafRule[]): Promise<void> {
       Id: ruleGroupId,
       LockToken: lockToken,
       Rules: awsRules as unknown as UpdateRuleGroupCommand['input']['Rules'],
+      MonetizationConfig: monetizationConfig,
       VisibilityConfig: {
         SampledRequestsEnabled: true,
         CloudWatchMetricsEnabled: true,

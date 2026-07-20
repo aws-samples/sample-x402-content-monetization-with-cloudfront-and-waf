@@ -82,6 +82,14 @@ Parameters:
       in CloudFormation console and events.
     Default: ''
 
+  EnableLegacyLambdaEdge:
+    Type: String
+    Description: Keep the legacy Lambda@Edge payment handlers associated during the first phase of a native WAF migration
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+
 
 Conditions:
   UseCdpFacilitator: !Equals
@@ -90,6 +98,12 @@ Conditions:
   UseDefaultOrigin: !Equals
     - !Ref OriginDomainName
     - ''
+  UseTestNetwork: !Equals
+    - !Ref Network
+    - 'eip155:84532'
+  UseLegacyLambdaEdge: !Equals
+    - !Ref EnableLegacyLambdaEdge
+    - 'true'
 
 Resources:
   # ============================================================
@@ -338,6 +352,21 @@ Resources:
       Scope: CLOUDFRONT
       Capacity: 300
       Description: Dedicated WAF rule group for x402 route-based access control, dynamically managed by the WAF Sync Function based on route config in SSM Parameter Store
+      MonetizationConfig:
+        CurrencyMode: !If
+          - UseTestNetwork
+          - TEST
+          - REAL
+        CryptoConfig:
+          PaymentNetworks:
+            - Chain: !If
+                - UseTestNetwork
+                - BASE_SEPOLIA
+                - BASE
+              WalletAddress: !Ref PayToAddress
+              Prices:
+                - Amount: '0.001'
+                  Currency: USDC
       Rules: []
       VisibilityConfig:
         SampledRequestsEnabled: true
@@ -409,6 +438,11 @@ Resources:
       LoggingFilter:
         DefaultBehavior: DROP
         Filters:
+          - Behavior: KEEP
+            Conditions:
+              - ActionCondition:
+                  Action: MONETIZE
+            Requirement: MEETS_ANY
           - Behavior: KEEP
             Conditions:
               - ActionCondition:
@@ -488,7 +522,6 @@ Resources:
       CodeUri: src/backoffice/waf-sync/
       Timeout: 60
       MemorySize: 256
-      ReservedConcurrentExecutions: 5
       Role: !GetAtt WafSyncExecutionRole.Arn
       KmsKeyArn: !GetAtt StackEncryptionKey.Arn
       Environment:
@@ -506,8 +539,6 @@ Resources:
         Sourcemap: false
         EntryPoints:
           - handler.ts
-        External:
-          - '@aws-sdk/*'
 
   # Amazon EventBridge rule for AWS Systems Manager Parameter Store change events (near-instant propagation)
   WafSyncSsmChangeRule:
@@ -633,6 +664,25 @@ Resources:
               Bool:
                 aws:SecureTransport: 'false'
 
+  # Forward viewer request data required by the x402 Lambda@Edge handlers.
+  # The AWS-managed AllViewerExceptHostHeader policy cannot be attached to an
+  # S3 origin, so use an equivalent custom policy that works with both the
+  # default S3 origin and a custom origin.
+  X402OriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub '${AWS::StackName}-x402-origin-request'
+        Comment: Forward x402 payment headers and viewer request data without the viewer Host header
+        CookiesConfig:
+          CookieBehavior: all
+        HeadersConfig:
+          HeaderBehavior: allExcept
+          Headers:
+            - host
+        QueryStringsConfig:
+          QueryStringBehavior: all
+
   # Amazon CloudFront distribution with AWS WAF association and AWS Lambda@Edge functions
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
@@ -693,13 +743,15 @@ Resources:
           Compress: true
           # Use CachingDisabled policy - payment requests must not be cached
           CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
-          # Use AllViewerExceptHostHeader origin request policy to forward payment headers to origin
-          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
-          LambdaFunctionAssociations:
-            - EventType: origin-request
-              LambdaFunctionARN: !Ref OriginRequestFunction.Version
-            - EventType: origin-response
-              LambdaFunctionARN: !Ref OriginResponseFunction.Version
+          # Forward payment and WAF-injected headers to the Lambda@Edge handlers/origin
+          OriginRequestPolicyId: !Ref X402OriginRequestPolicy
+          LambdaFunctionAssociations: !If
+            - UseLegacyLambdaEdge
+            - - EventType: origin-request
+                LambdaFunctionARN: !Ref OriginRequestFunction.Version
+              - EventType: origin-response
+                LambdaFunctionARN: !Ref OriginResponseFunction.Version
+            - !Ref 'AWS::NoValue'
         DefaultRootObject: index.html
 
   # ============================================================

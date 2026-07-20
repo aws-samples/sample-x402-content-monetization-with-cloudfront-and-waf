@@ -5,10 +5,8 @@
  * WAF_Rule_Group. Each route + policy combination becomes a single WAF rule:
  *
  * - **Block actions** → WAF Block rule
- * - **Price actions** (including "0") → WAF Count rule with `InsertHeader`
- *   custom request header `x-x402-route-action: <price>` and a
- *   `x402:route-matched` label. Subsequent rules include a scope-down
- *   NOT LabelMatch so only the first matching rule captures the request.
+ * - **Price actions** → native AWS WAF Monetize rules
+ * - **Free actions** ("0") → WAF Allow rules
  *
  * Rules are assigned priorities in route order then policy order so that
  * the first matching policy wins (consistent with WAF evaluation semantics).
@@ -23,10 +21,9 @@ import { toWafStatement } from './route-pattern-translator';
 import {
   LabelMatchScope,
   RouteAction,
-  RouteMatchedLabel,
   DefaultCondition,
+  Monetization,
 } from './constants';
-import { Headers } from '../../runtime/shared/constants';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -73,22 +70,12 @@ export function translateRouteConfig(config: RouteConfig): WafRule[] {
       const baseStatement = buildStatement(uriStatement, policy.condition);
       const action = buildAction(policy.action);
 
-      // Every rule gets scope-down NOT(LabelMatch(x402:route-matched))
-      // so that once a request is labeled by an earlier Count rule,
-      // all subsequent rules (including block rules) skip it.
-      const statement = wrapWithScopeDown(baseStatement);
-
       const rule: WafRule = {
         name,
         priority,
-        statement,
+        statement: baseStatement,
         action,
       };
-
-      // Non-block rules get the route-matched label for scope-down exclusion
-      if (action !== 'block') {
-        rule.ruleLabels = [RouteMatchedLabel.KEY];
-      }
 
       rules.push(rule);
 
@@ -102,43 +89,6 @@ export function translateRouteConfig(config: RouteConfig): WafRule[] {
 // ---------------------------------------------------------------------------
 // Internal Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Wrap a statement with a scope-down NOT LabelMatch so that requests
- * already captured by an earlier Count rule (labeled `x402:route-matched`)
- * are excluded from this rule's evaluation.
- *
- * The resulting statement is:
- *   AND( NOT(LabelMatch(x402:route-matched)), <originalStatement> )
- *
- * If the original statement is already an AND, we flatten its children
- * into the new AND to avoid nested AND-inside-AND, which WAF rejects
- * with WAFInvalidParameterException (nested statement not valid).
- */
-function wrapWithScopeDown(originalStatement: WafStatement): WafStatement {
-  const notAlreadyMatched: WafStatement = {
-    notStatement: {
-      statement: {
-        labelMatchStatements: [{ scope: LabelMatchScope.LABEL, key: RouteMatchedLabel.KEY }],
-      },
-    },
-  };
-
-  // Flatten: if original is AND, merge its children to avoid AND(NOT, AND(...))
-  if (originalStatement.andStatement) {
-    return {
-      andStatement: {
-        statements: [notAlreadyMatched, ...originalStatement.andStatement.statements],
-      },
-    };
-  }
-
-  return {
-    andStatement: {
-      statements: [notAlreadyMatched, originalStatement],
-    },
-  };
-}
 
 /**
  * Build a descriptive WAF rule name from route/policy indices and action.
@@ -249,17 +199,38 @@ function buildStatement(
  * Build the WAF rule action from the policy action string.
  *
  * - `"block"` → WAF Block action
- * - Any other string (price, including "0") → WAF Allow with InsertHeader
+ * - `"0"` → WAF Allow action
+ * - Any positive price → native WAF Monetize action with a multiplier
+ *   against the configured $0.001 base price
  */
 function buildAction(action: string): WafRule['action'] {
   if (action === RouteAction.BLOCK) {
     return RouteAction.BLOCK;
   }
 
+  if (action === RouteAction.FREE) {
+    return 'allow';
+  }
+
+  const [wholePart, fractionalPart = ''] = action.split('.');
+  const paddedFraction = `${fractionalPart}000`.slice(0, 3);
+  const multiplier = Number(wholePart) * Monetization.PRICE_SCALE + Number(paddedFraction);
+
+  if (
+    !Number.isInteger(multiplier) ||
+    multiplier < 1 ||
+    multiplier > Monetization.MAX_MULTIPLIER ||
+    fractionalPart.length > 3
+  ) {
+    throw new Error(
+      `Price "${action}" cannot be represented by native WAF monetization; ` +
+      `use increments of ${Monetization.BASE_PRICE_USDC} up to 0.100 USDC`,
+    );
+  }
+
   return {
-    insertHeader: {
-      name: Headers.ROUTE_ACTION,
-      value: action,
+    monetize: {
+      priceMultiplier: String(multiplier),
     },
   };
 }

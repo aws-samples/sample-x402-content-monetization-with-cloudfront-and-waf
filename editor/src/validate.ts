@@ -7,7 +7,7 @@ export const MAX_TOTAL_POLICIES = 100;
 export const MAX_POLICIES_PER_ROUTE = 20;
 /** Max leaf conditions in a single AND/OR group. WAF has no hard limit but WCU grows linearly. */
 export const MAX_CHILDREN_PER_GROUP = 10;
-/** Max total leaf statements per policy condition. Each ≈ 1 WCU; the rule also has URI match + scope-down overhead. */
+/** Max total leaf statements per policy condition. Each costs approximately 1 WCU. */
 export const MAX_STATEMENTS_PER_CONDITION = 20;
 
 export function validate(state: EditorState): ValidationErrors {
@@ -77,11 +77,11 @@ export function validate(state: EditorState): ValidationErrors {
 
     for (const policy of route.policies) {
       const a = policy.action.trim();
-      if (a !== 'block' && a !== '0' && (isNaN(Number(a)) || Number(a) < 0)) {
-        errors[`${policy.id}-action`] = 'Action must be a price (e.g. "0.01"), "0", or "block"';
-      }
-      if (a !== 'block' && a !== '0' && !isNaN(Number(a)) && Number(a) > 0 && Number(a) < 0.000001) {
-        errors[`${policy.id}-action`] = 'Price too small. Minimum practical price is 0.000001 USDC.';
+      if (a !== 'block' && a !== '0') {
+        const multiplier = Number(a) * 1000;
+        if (!/^\d+(\.\d+)?$/.test(a) || !Number.isInteger(multiplier) || multiplier < 1 || multiplier > 100) {
+          errors[`${policy.id}-action`] = 'Native WAF prices must be in $0.001 increments from 0.001 through 0.100 USDC.';
+        }
       }
 
       if (!policy.isDefault) {

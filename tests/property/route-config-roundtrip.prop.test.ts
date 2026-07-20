@@ -85,14 +85,11 @@ const arbV2Condition: fc.Arbitrary<ConditionExpression | 'default'> = fc.oneof(
   arbConditionExpression(3),
 );
 
-/** Generate a valid price string matching /^\d+(\.\d+)?$/ */
+/** Generate a price supported by the native WAF $0.001 base price. */
 const arbPrice: fc.Arbitrary<string> = fc.oneof(
   fc.constant('0'),
-  fc.nat({ max: 999 }).map((n) => String(n)),
-  fc
-    .tuple(fc.nat({ max: 999 }), fc.nat({ max: 999999 }))
-    .filter(([, frac]) => frac > 0)
-    .map(([whole, frac]) => `${whole}.${frac}`),
+  fc.integer({ min: 1, max: 100 })
+    .map((multiplier) => (multiplier / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')),
 );
 
 /** Generate a valid action: price string or "block". */

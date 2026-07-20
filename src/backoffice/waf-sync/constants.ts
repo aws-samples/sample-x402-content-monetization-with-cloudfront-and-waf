@@ -5,50 +5,6 @@
  */
 
 // ---------------------------------------------------------------------------
-// WAF Label Prefixes
-// ---------------------------------------------------------------------------
-
-const WAF_LABEL_BASE = 'awswaf:managed:aws:bot-control:bot';
-
-export const WafLabels = {
-  /** Prefix for bot category labels. */
-  CATEGORY: `${WAF_LABEL_BASE}:category:`,
-
-  /** Prefix for bot organization labels. */
-  ORGANIZATION: `${WAF_LABEL_BASE}:organization:`,
-
-  /** Prefix for bot name labels. */
-  NAME: `${WAF_LABEL_BASE}:name:`,
-
-  /** Exact label for verified bots. */
-  VERIFIED: `${WAF_LABEL_BASE}:verified`,
-
-  /** Exact label for WBA-verified bots. */
-  WBA_VERIFIED: `${WAF_LABEL_BASE}:web_bot_auth:verified`,
-} as const;
-
-// ---------------------------------------------------------------------------
-// WAF Actor Types
-// ---------------------------------------------------------------------------
-
-export const ActorType = {
-  UNVERIFIED_BOT: 'unverified-bot',
-  VERIFIED_BOT: 'verified-bot',
-  WBA_VERIFIED_BOT: 'wba-verified-bot',
-} as const;
-
-// ---------------------------------------------------------------------------
-// WAF Signal Header Names (unprefixed, used in Count InsertHeaders)
-// ---------------------------------------------------------------------------
-
-export const BotSignalHeaders = {
-  ACTOR_TYPE: 'actor-type',
-  BOT_CATEGORY: 'bot-category',
-  BOT_ORGANIZATION: 'bot-organization',
-  BOT_NAME: 'bot-name',
-} as const;
-
-// ---------------------------------------------------------------------------
 // WAF Scope & Operators
 // ---------------------------------------------------------------------------
 
@@ -58,10 +14,6 @@ export const WafScope = {
 
 export const WafTextTransformation = {
   NONE: 'NONE',
-} as const;
-
-export const WafComparisonOperator = {
-  GE: 'GE',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -82,20 +34,11 @@ export const RouteAction = {
   FREE: '0',
 } as const;
 
-// ---------------------------------------------------------------------------
-// Guard Rule
-// ---------------------------------------------------------------------------
-
-export const GuardRule = {
-  NAME: 'guard-block-spoofed-headers',
-} as const;
-
-// ---------------------------------------------------------------------------
-// WAF Rule Labels
-// ---------------------------------------------------------------------------
-
-export const RouteMatchedLabel = {
-  KEY: 'x402:route-matched',
+/** Native AWS WAF monetization uses a $0.001 USDC base price. */
+export const Monetization = {
+  BASE_PRICE_USDC: '0.001',
+  PRICE_SCALE: 1000,
+  MAX_MULTIPLIER: 100,
 } as const;
 
 // ---------------------------------------------------------------------------

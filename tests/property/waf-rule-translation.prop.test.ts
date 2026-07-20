@@ -7,12 +7,10 @@
  * (including nested and/or/not objects), the WAF rule translator should
  * produce a set of WAF rules where:
  *   (a) each block action becomes a WAF Block rule,
- *   (b) each price action becomes a WAF rule that inserts the
- *       `x-x402-route-action` header with the correct price,
+ *   (b) each price action becomes a native WAF Monetize rule,
  *   (c) rules are assigned priorities in strictly increasing order
  *       (first match wins ordering preserved),
- *   (d) non-first non-block rules include scope-down
- *       NOT LabelMatch(x402:route-matched) wrapper.
+ *   (d) free actions become terminating WAF Allow rules.
  *
  */
 
@@ -91,14 +89,12 @@ const arbCondition: fc.Arbitrary<ConditionExpression | 'default'> = fc.oneof(
   arbConditionExpression(3),
 );
 
-/** Generate a valid price string matching /^\d+(\.\d+)?$/ */
+/** Generate a price supported by the $0.001 native WAF base price. */
 const arbPrice: fc.Arbitrary<string> = fc.oneof(
   fc.constant('0'),
-  fc.nat({ max: 999 }).map((n) => String(n)),
-  fc
-    .tuple(fc.nat({ max: 999 }), fc.nat({ max: 999999 }))
-    .filter(([, frac]) => frac > 0)
-    .map(([whole, frac]) => `${whole}.${frac}`),
+  fc.integer({ min: 1, max: 100 }).map((multiplier) =>
+    (multiplier / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, ''),
+  ),
 );
 
 /** Generate a valid action: price string or "block". */
@@ -191,7 +187,7 @@ describe('Property 3: WAF rule translation correctness with extended conditions'
     );
   });
 
-  it('price actions produce InsertHeader rules with correct price values', () => {
+  it('price actions produce native Monetize rules and free actions Allow', () => {
     fc.assert(
       fc.property(arbRouteConfig, (config: RouteConfig) => {
         const rules = translateRouteConfig(config);
@@ -201,13 +197,12 @@ describe('Property 3: WAF rule translation correctness with extended conditions'
           const { policy } = flat[i];
           const rule = rules[i];
 
-          if (policy.action !== 'block') {
-            // Must be an InsertHeader action
-            expect(rule.action).not.toBe('block');
-            const action = rule.action as { insertHeader: { name: string; value: string } };
-            expect(action.insertHeader).toBeDefined();
-            expect(action.insertHeader.name).toBe('x-x402-route-action');
-            expect(action.insertHeader.value).toBe(policy.action);
+          if (policy.action === '0') {
+            expect(rule.action).toBe('allow');
+          } else if (policy.action !== 'block') {
+            expect(rule.action).toEqual({
+              monetize: { priceMultiplier: String(Number(policy.action) * 1000) },
+            });
           }
         }
       }),
@@ -233,35 +228,15 @@ describe('Property 3: WAF rule translation correctness with extended conditions'
     );
   });
 
-  it('all rules include scope-down NOT LabelMatch wrapper', () => {
-    /**
-     * Helper to check if a statement is the scope-down NOT(LabelMatch(x402:route-matched)).
-     * This is distinct from a NOT condition expression — scope-down specifically wraps
-     * a LabelMatch for the route-matched label.
-     */
-    function isScopeDownNot(s: { notStatement?: { statement: { labelMatchStatements?: Array<{ key: string }> } } }): boolean {
-      return !!(
-        s.notStatement &&
-        s.notStatement.statement.labelMatchStatements &&
-        s.notStatement.statement.labelMatchStatements.length === 1 &&
-        s.notStatement.statement.labelMatchStatements[0].key === 'x402:route-matched'
-      );
-    }
-
+  it('uses terminating WAF actions without legacy route-matched labels', () => {
     fc.assert(
       fc.property(arbRouteConfig, (config: RouteConfig) => {
         const rules = translateRouteConfig(config);
 
-        for (let i = 0; i < rules.length; i++) {
-          const rule = rules[i];
-
-          // Every rule must have a top-level andStatement with scope-down NOT wrapper
-          expect(rule.statement.andStatement).toBeDefined();
-          const topStatements = rule.statement.andStatement!.statements;
-
-          // Must contain a NOT(LabelMatch(x402:route-matched)) statement
-          const scopeDownStmt = topStatements.find(isScopeDownNot);
-          expect(scopeDownStmt).toBeDefined();
+        for (const rule of rules) {
+          expect(JSON.stringify(rule.statement)).not.toContain('x402:route-matched');
+          expect(['block', 'allow'].includes(rule.action as string) ||
+            (typeof rule.action === 'object' && 'monetize' in rule.action)).toBe(true);
         }
       }),
       { numRuns: 200, verbose: true },
@@ -279,25 +254,13 @@ describe('Property 3: WAF rule translation correctness with extended conditions'
           const rule = rules[i];
           const expectedUriStatement = toWafStatement(route.pattern);
 
-          // All rules are wrapped with scope-down:
-          // AND(NOT(LabelMatch(x402:route-matched)), ...originalChildren)
-          expect(rule.statement.andStatement).toBeDefined();
-          const topStatements = rule.statement.andStatement!.statements;
-          expect(topStatements.some((s) => s.notStatement)).toBe(true);
-
-          // Find the URI match statement among the children (byte-match or regex-match)
-          const uriChild = topStatements.find((s) => s.byteMatchStatement || s.regexMatchStatement);
-
           if (policy.condition === 'default') {
-            // AND(NOT_scopedown, URI) — 2 children
-            expect(uriChild).toBeDefined();
-            expect(uriChild).toEqual(expectedUriStatement);
-            expect(topStatements.length).toBe(2);
+            expect(rule.statement).toEqual(expectedUriStatement);
           } else {
-            // Flattened: AND(NOT_scopedown, URI, condition) — 3+ children
-            expect(uriChild).toBeDefined();
-            expect(uriChild).toEqual(expectedUriStatement);
-            expect(topStatements.length).toBeGreaterThanOrEqual(3);
+            expect(rule.statement.andStatement).toBeDefined();
+            const topStatements = rule.statement.andStatement!.statements;
+            expect(topStatements[0]).toEqual(expectedUriStatement);
+            expect(topStatements).toHaveLength(2);
           }
         }
       }),

@@ -14,6 +14,10 @@ cp scripts/.env.example scripts/.env
 
 3. Fund the wallet with USDC on Base Sepolia. The wallet address is printed on first run. Use the [Base Sepolia faucet](https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet) for testnet ETH/USDC.
 
+The example environment files intentionally contain empty placeholders. Never commit `scripts/.env`, a root `.env`, CDP credentials, wallet secrets, traffic logs, settlement exports, or screenshots from a personal deployment.
+
+The generated bot names are simulated through `User-Agent` headers. AWS WAF can classify the apparent bot name and category while marking the request as unverified because the traffic does not originate from the bot operator's authenticated infrastructure.
+
 ## Usage
 
 ```bash

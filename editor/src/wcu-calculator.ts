@@ -13,7 +13,7 @@ import type { RuleGroupType } from 'react-querybuilder';
 // ---------------------------------------------------------------------------
 
 export const RULE_GROUP_CAPACITY = 300;
-export const FIXED_OVERHEAD_WCU = 16;
+export const FIXED_OVERHEAD_WCU = 0;
 
 // ---------------------------------------------------------------------------
 // Pattern WCU Estimation
@@ -76,14 +76,12 @@ export function estimateConditionWcu(query: RuleGroupType, isDefault: boolean): 
  *
  * Each policy rule consists of:
  * - URI pattern match: patternWcu (1 or 3)
- * - Scope-down NOT(LabelMatch): 1 WCU
  * - Condition leaves: 1 WCU each
  */
 export function estimatePolicyWcu(pattern: string, policy: EditorPolicy): number {
   const patternWcu = estimatePatternWcu(pattern);
-  const scopeDownWcu = 1; // NOT(LabelMatch(x402:route-matched))
   const conditionWcu = estimateConditionWcu(policy.query, policy.isDefault);
-  return patternWcu + scopeDownWcu + conditionWcu;
+  return patternWcu + conditionWcu;
 }
 
 // ---------------------------------------------------------------------------

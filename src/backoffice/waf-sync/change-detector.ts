@@ -43,11 +43,11 @@ function sortKeys(value: unknown): unknown {
 
 /**
  * Translation format version. Bump this whenever the WAF rule translation
- * logic changes (e.g., switching from Allow to Count actions) so that
+ * logic changes (for example, switching to native Monetize actions) so that
  * the hash changes even if the Route_Config content is identical.
  * This forces a WAF re-sync after code deploys that alter rule output.
  */
-const TRANSLATION_FORMAT_VERSION = 2;
+const TRANSLATION_FORMAT_VERSION = 3;
 
 /**
  * Compute a deterministic SHA-256 hash of a Route_Config object.

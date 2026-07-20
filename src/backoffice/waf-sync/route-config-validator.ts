@@ -19,10 +19,10 @@ export type ValidationResult =
   | { success: false; error: string };
 
 // ---------------------------------------------------------------------------
-// Price pattern: a non-negative decimal number (e.g., "0", "0.001", "10", "1.5")
+// Native WAF monetization uses a $0.001 base price and a multiplier of 1-100.
 // ---------------------------------------------------------------------------
 
-const PRICE_PATTERN = /^\d+(\.\d+)?$/;
+const NATIVE_PRICE_PATTERN = /^0\.\d{1,3}$/;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -143,9 +143,17 @@ function validateAccessPolicy(input: unknown, prefix: string): AccessPolicyResul
   if (typeof action !== 'string') {
     return fail(`${prefix}.action: must be a string`);
   }
-  if (action !== 'block' && !PRICE_PATTERN.test(action)) {
+  const numericPrice = Number(action);
+  const isNativePrice =
+    NATIVE_PRICE_PATTERN.test(action) &&
+    numericPrice >= 0.001 &&
+    numericPrice <= 0.1 &&
+    Number.isInteger(numericPrice * 1000);
+
+  if (action !== 'block' && action !== '0' && !isNativePrice) {
     return fail(
-      `${prefix}.action: must be "block" or a non-negative price string (e.g., "0", "0.001", "10"), got "${action}"`,
+      `${prefix}.action: must be "block", "0", or a native WAF price in ` +
+      `$0.001 increments from "0.001" through "0.100", got "${action}"`,
     );
   }
 
