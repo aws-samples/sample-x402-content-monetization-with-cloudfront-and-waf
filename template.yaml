@@ -23,6 +23,19 @@ Metadata:
   BuildProperties:
     Minify: true
     Target: es2024
+    # The AWS SDK is provided by the nodejs24.x runtime, so it is excluded from
+    # the bundle to keep the Lambda@Edge artifacts small (~128 KB) and cold
+    # starts fast — these functions run on every request at every edge location.
+    #
+    # Consequence: @aws-sdk/* packages are declared in devDependencies, not
+    # dependencies, because they are never shipped in the artifact. They are
+    # installed only for local type checking and tests. Adding an SDK import to
+    # runtime code therefore requires a matching devDependency entry.
+    #
+    # Trade-off: the functions run against whatever SDK version the runtime
+    # supplies, which AWS may update independently of this project. If you need
+    # to pin an exact SDK version, remove this External entry so the SDK is
+    # bundled, and move those packages back to dependencies.
     External:
       - '@aws-sdk/*'
 
