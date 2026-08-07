@@ -26,7 +26,8 @@
   ],
   "license": "MIT-0",
   "dependencies": {
-    "@aws-sdk/client-cloudwatch": "^3.1105.0",
+    "@aws-sdk/client-cloudfront": "^3.1105.0",
+    "@aws-sdk/client-s3": "^3.1105.0",
     "@aws-sdk/client-secrets-manager": "^3.1105.0",
     "@aws-sdk/client-ssm": "^3.1105.0",
     "@aws-sdk/client-wafv2": "^3.1105.0",
@@ -46,7 +47,6 @@
     "esbuild": "^0.28.1",
     "fast-check": "^4.9.0",
     "jest": "^30.4.2",
-    "js-yaml": "^5.2.3",
     "ts-jest": "^29.4.12",
     "typescript": "^5.9.3"
   },
