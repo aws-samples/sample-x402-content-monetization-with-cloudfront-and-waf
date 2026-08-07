@@ -9,6 +9,7 @@
  */
 
 import * as crypto from 'crypto';
+import type { FacilitatorConfig } from '@x402/core/server';
 import { createCdpFacilitatorConfig } from '../../src/runtime/shared/cdp-auth';
 import { CdpConfig } from '../../src/runtime/shared/constants';
 
@@ -44,6 +45,28 @@ function decodeJwtHeader(jwt: string): Record<string, unknown> {
   return JSON.parse(header);
 }
 
+/** Endpoints for which createCdpFacilitatorConfig always supplies auth headers. */
+type AuthedEndpoint = 'verify' | 'settle' | 'supported';
+
+type AuthHeaders = Awaited<ReturnType<NonNullable<FacilitatorConfig['createAuthHeaders']>>>;
+
+/**
+ * Read the Authorization header for an endpoint, failing the test if it is
+ * absent. Upstream types each endpoint as optional, but this config always sets them.
+ */
+function authorizationFor(headers: AuthHeaders, endpoint: AuthedEndpoint): string {
+  const authorization = headers[endpoint]?.Authorization;
+  if (authorization === undefined) {
+    throw new Error(`expected an Authorization header for the ${endpoint} endpoint`);
+  }
+  return authorization;
+}
+
+/** Strip the `Bearer ` prefix to get the raw JWT for an endpoint. */
+function jwtFor(headers: AuthHeaders, endpoint: AuthedEndpoint): string {
+  return authorizationFor(headers, endpoint).replace('Bearer ', '');
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -65,16 +88,16 @@ describe('CDP Auth - createCdpFacilitatorConfig', () => {
     expect(headers).toHaveProperty('supported');
 
     // Each should have an Authorization header with Bearer token
-    expect(headers.verify.Authorization).toMatch(/^Bearer /);
-    expect(headers.settle.Authorization).toMatch(/^Bearer /);
-    expect(headers.supported.Authorization).toMatch(/^Bearer /);
+    expect(authorizationFor(headers, 'verify')).toMatch(/^Bearer /);
+    expect(authorizationFor(headers, 'settle')).toMatch(/^Bearer /);
+    expect(authorizationFor(headers, 'supported')).toMatch(/^Bearer /);
   });
 
   it('should produce valid JWT structure with correct claims', async () => {
     const config = createCdpFacilitatorConfig('my-api-key', testKeyPair.privateKey);
     const headers = await config.createAuthHeaders!();
 
-    const jwt = headers.verify.Authorization.replace('Bearer ', '');
+    const jwt = jwtFor(headers, 'verify');
     const payload = decodeJwtPayload(jwt);
     const header = decodeJwtHeader(jwt);
 
@@ -99,9 +122,9 @@ describe('CDP Auth - createCdpFacilitatorConfig', () => {
     const config = createCdpFacilitatorConfig('key-id', testKeyPair.privateKey);
     const headers = await config.createAuthHeaders!();
 
-    const verifyPayload = decodeJwtPayload(headers.verify.Authorization.replace('Bearer ', ''));
-    const settlePayload = decodeJwtPayload(headers.settle.Authorization.replace('Bearer ', ''));
-    const supportedPayload = decodeJwtPayload(headers.supported.Authorization.replace('Bearer ', ''));
+    const verifyPayload = decodeJwtPayload(jwtFor(headers, 'verify'));
+    const settlePayload = decodeJwtPayload(jwtFor(headers, 'settle'));
+    const supportedPayload = decodeJwtPayload(jwtFor(headers, 'supported'));
 
     expect(verifyPayload.uri).toContain('POST');
     expect(settlePayload.uri).toContain('POST');
@@ -112,9 +135,9 @@ describe('CDP Auth - createCdpFacilitatorConfig', () => {
     const config = createCdpFacilitatorConfig('key-id', testKeyPair.privateKey);
     const headers = await config.createAuthHeaders!();
 
-    const verifyPayload = decodeJwtPayload(headers.verify.Authorization.replace('Bearer ', ''));
-    const settlePayload = decodeJwtPayload(headers.settle.Authorization.replace('Bearer ', ''));
-    const supportedPayload = decodeJwtPayload(headers.supported.Authorization.replace('Bearer ', ''));
+    const verifyPayload = decodeJwtPayload(jwtFor(headers, 'verify'));
+    const settlePayload = decodeJwtPayload(jwtFor(headers, 'settle'));
+    const supportedPayload = decodeJwtPayload(jwtFor(headers, 'supported'));
 
     expect(verifyPayload.uri).toContain('/verify');
     expect(settlePayload.uri).toContain('/settle');
@@ -127,8 +150,8 @@ describe('CDP Auth - createCdpFacilitatorConfig', () => {
     const headers1 = await config.createAuthHeaders!();
     const headers2 = await config.createAuthHeaders!();
 
-    const nonce1 = decodeJwtHeader(headers1.verify.Authorization.replace('Bearer ', '')).nonce;
-    const nonce2 = decodeJwtHeader(headers2.verify.Authorization.replace('Bearer ', '')).nonce;
+    const nonce1 = decodeJwtHeader(jwtFor(headers1, 'verify')).nonce;
+    const nonce2 = decodeJwtHeader(jwtFor(headers2, 'verify')).nonce;
 
     expect(nonce1).not.toBe(nonce2);
   });
@@ -138,7 +161,7 @@ describe('CDP Auth - createCdpFacilitatorConfig', () => {
     const headers = await config.createAuthHeaders!();
 
     for (const endpoint of ['verify', 'settle', 'supported'] as const) {
-      const jwt = headers[endpoint].Authorization.replace('Bearer ', '');
+      const jwt = jwtFor(headers, endpoint);
       const parts = jwt.split('.');
       expect(parts).toHaveLength(3);
       // Each part should be non-empty base64url
